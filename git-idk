@@ -10,6 +10,7 @@ NUM_CONTEXT_COMMITS="${GIT_IDK_CONTEXT_COMMITS:-${NUM_CONTEXT_COMMITS:-0}}"
 NUM_TITLE_COMMITS="${GIT_IDK_TITLE_COMMITS:-${NUM_TITLE_COMMITS:-15}}"
 STAGE_ALL=false
 TARGET_COMMIT=""
+DEBUG=false
 
 # Model defaults per backend (fast models for quick responses)
 CLAUDE_CLI_MODEL="${GIT_IDK_CLAUDE_MODEL:-${CLAUDE_CLI_MODEL:-haiku}}"
@@ -58,6 +59,7 @@ Other options:
   -t, --title-commits <N>   Number of recent commit titles for style reference (default: 15)
   -c, --context-commits <N> Number of recent commits with full diffs (default: 0)
   --model <model>           Override the model for the selected backend
+  --debug                   Show the prompt sent to the LLM
   -h, --help                Show this help message
 
 Environment variables:
@@ -127,6 +129,10 @@ parse_args() {
             --model)
                 MODEL_OVERRIDE="$2"
                 shift 2
+                ;;
+            --debug)
+                DEBUG=true
+                shift
                 ;;
             -h|--help)
                 show_usage
@@ -753,6 +759,13 @@ main() {
         # Calculate prompt size in KB
         local prompt_size_kb
         prompt_size_kb=$(awk "BEGIN {printf \"%.1f\", ${#prompt} / 1024}")
+
+        if [[ "$DEBUG" == true ]]; then
+            echo -e "${YELLOW}=== DEBUG: Prompt ===${NC}"
+            echo "$prompt" | more
+            echo -e "${YELLOW}=== END Prompt ===${NC}"
+            echo ""
+        fi
 
         echo -e "${CYAN}Asking ${BACKEND_DISPLAY} (${prompt_size_kb} KB)...${NC}"
 
