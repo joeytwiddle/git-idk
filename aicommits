@@ -3,11 +3,21 @@ set -euo pipefail
 
 # Configuration
 NUM_SUGGESTIONS="${AICOMMITS_NUM_SUGGESTIONS:-3}"
-MODEL="${AICOMMITS_MODEL:-claude-sonnet-4-20250514}"
-API_URL="https://api.anthropic.com/v1/messages"
 
-# Backend selection: "cli" (claude command) or "api" (direct API)
-# Auto-detected, but can be forced with AICOMMITS_BACKEND
+# Model defaults per backend
+CLAUDE_MODEL="${AICOMMITS_CLAUDE_MODEL:-claude-sonnet-4-20250514}"
+OPENAI_MODEL="${AICOMMITS_OPENAI_MODEL:-gpt-4o}"
+GEMINI_MODEL="${AICOMMITS_GEMINI_MODEL:-gemini-2.0-flash}"
+OLLAMA_MODEL="${AICOMMITS_OLLAMA_MODEL:-llama3.2}"
+
+# API endpoints
+CLAUDE_API_URL="https://api.anthropic.com/v1/messages"
+OPENAI_API_URL="${AICOMMITS_OPENAI_URL:-https://api.openai.com/v1/chat/completions}"
+GEMINI_API_URL="https://generativelanguage.googleapis.com/v1beta/models"
+OLLAMA_API_URL="${AICOMMITS_OLLAMA_URL:-http://localhost:11434/api/chat}"
+
+# Backend selection: claude_cli, claude_api, openai, gemini, ollama
+# Auto-detected, but can be forced with AICOMMITS_BACKEND or CLI flags
 BACKEND="${AICOMMITS_BACKEND:-auto}"
 
 # Colors
@@ -19,6 +29,85 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
+# Show usage
+show_usage() {
+    cat << 'EOF'
+Usage: aicommits [options]
+
+Generate AI-powered commit messages for staged changes.
+
+Backend options (mutually exclusive):
+  --claude          Use Claude CLI (default if available)
+  --claude-api      Use Claude API directly
+  --openai          Use OpenAI/ChatGPT API
+  --gemini          Use Google Gemini API
+  --ollama          Use local Ollama server
+
+Other options:
+  -n, --num <N>     Number of suggestions (default: 3)
+  --model <model>   Override the model for the selected backend
+  -h, --help        Show this help message
+
+Environment variables:
+  AICOMMITS_BACKEND          Backend to use (claude_cli, claude_api, openai, gemini, ollama)
+  AICOMMITS_NUM_SUGGESTIONS  Number of suggestions (default: 3)
+  AICOMMITS_CLAUDE_MODEL     Claude model (default: claude-sonnet-4-20250514)
+  AICOMMITS_OPENAI_MODEL     OpenAI model (default: gpt-4o)
+  AICOMMITS_GEMINI_MODEL     Gemini model (default: gemini-2.0-flash)
+  AICOMMITS_OLLAMA_MODEL     Ollama model (default: llama3.2)
+  AICOMMITS_OPENAI_URL       OpenAI-compatible endpoint URL
+  AICOMMITS_OLLAMA_URL       Ollama server URL (default: http://localhost:11434/api/chat)
+  ANTHROPIC_API_KEY          API key for Claude API
+  OPENAI_API_KEY             API key for OpenAI
+  GEMINI_API_KEY             API key for Google Gemini
+EOF
+}
+
+# Parse command line arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --claude)
+                BACKEND="claude_cli"
+                shift
+                ;;
+            --claude-api)
+                BACKEND="claude_api"
+                shift
+                ;;
+            --openai|--chatgpt)
+                BACKEND="openai"
+                shift
+                ;;
+            --gemini)
+                BACKEND="gemini"
+                shift
+                ;;
+            --ollama)
+                BACKEND="ollama"
+                shift
+                ;;
+            -n|--num)
+                NUM_SUGGESTIONS="$2"
+                shift 2
+                ;;
+            --model)
+                MODEL_OVERRIDE="$2"
+                shift 2
+                ;;
+            -h|--help)
+                show_usage
+                exit 0
+                ;;
+            *)
+                echo -e "${RED}Unknown option: $1${NC}" >&2
+                show_usage >&2
+                exit 1
+                ;;
+        esac
+    done
+}
+
 # Detect which backend to use
 detect_backend() {
     if [[ "$BACKEND" != "auto" ]]; then
@@ -26,10 +115,19 @@ detect_backend() {
         return
     fi
 
+    # Priority: claude CLI > claude API > openai > gemini > ollama
     if command -v claude &> /dev/null; then
-        echo "cli"
+        echo "claude_cli"
+    elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+        echo "claude_api"
+    elif [[ -n "${OPENAI_API_KEY:-}" ]]; then
+        echo "openai"
+    elif [[ -n "${GEMINI_API_KEY:-}" ]]; then
+        echo "gemini"
+    elif curl -s --connect-timeout 1 "${OLLAMA_API_URL%/api/chat}/api/tags" &>/dev/null; then
+        echo "ollama"
     else
-        echo "api"
+        echo "none"
     fi
 }
 
@@ -42,25 +140,82 @@ check_requirements() {
 
     BACKEND=$(detect_backend)
 
-    if [[ "$BACKEND" == "cli" ]]; then
-        echo -e "${CYAN}Using Claude CLI (local, privacy-preserving)${NC}"
-    elif [[ "$BACKEND" == "api" ]]; then
-        if ! command -v curl &> /dev/null; then
-            echo -e "${RED}Error: curl is required but not installed.${NC}" >&2
+    case "$BACKEND" in
+        claude_cli)
+            if ! command -v claude &> /dev/null; then
+                echo -e "${RED}Error: 'claude' CLI not found.${NC}" >&2
+                exit 1
+            fi
+            echo -e "${CYAN}Using Claude CLI (local, privacy-preserving)${NC}"
+            ;;
+        claude_api)
+            check_curl_jq
+            if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+                echo -e "${RED}Error: ANTHROPIC_API_KEY environment variable is not set.${NC}" >&2
+                exit 1
+            fi
+            echo -e "${CYAN}Using Claude API${NC}"
+            ;;
+        openai)
+            check_curl_jq
+            if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+                echo -e "${RED}Error: OPENAI_API_KEY environment variable is not set.${NC}" >&2
+                exit 1
+            fi
+            echo -e "${CYAN}Using OpenAI API ($OPENAI_MODEL)${NC}"
+            ;;
+        gemini)
+            check_curl_jq
+            if [[ -z "${GEMINI_API_KEY:-}" ]]; then
+                echo -e "${RED}Error: GEMINI_API_KEY environment variable is not set.${NC}" >&2
+                exit 1
+            fi
+            echo -e "${CYAN}Using Google Gemini API ($GEMINI_MODEL)${NC}"
+            ;;
+        ollama)
+            check_curl_jq
+            if ! curl -s --connect-timeout 2 "${OLLAMA_API_URL%/api/chat}/api/tags" &>/dev/null; then
+                echo -e "${RED}Error: Cannot connect to Ollama at ${OLLAMA_API_URL%/api/chat}${NC}" >&2
+                echo -e "${YELLOW}Make sure Ollama is running: ollama serve${NC}" >&2
+                exit 1
+            fi
+            echo -e "${CYAN}Using Ollama ($OLLAMA_MODEL)${NC}"
+            ;;
+        none)
+            echo -e "${RED}Error: No backend available.${NC}" >&2
+            echo -e "${YELLOW}Options:${NC}" >&2
+            echo -e "  - Install 'claude' CLI" >&2
+            echo -e "  - Set ANTHROPIC_API_KEY for Claude API" >&2
+            echo -e "  - Set OPENAI_API_KEY for OpenAI" >&2
+            echo -e "  - Set GEMINI_API_KEY for Gemini" >&2
+            echo -e "  - Start Ollama server (ollama serve)" >&2
             exit 1
-        fi
-        if ! command -v jq &> /dev/null; then
-            echo -e "${RED}Error: jq is required but not installed.${NC}" >&2
+            ;;
+        *)
+            echo -e "${RED}Error: Unknown backend '$BACKEND'.${NC}" >&2
+            echo -e "Valid backends: claude_cli, claude_api, openai, gemini, ollama" >&2
             exit 1
-        fi
-        if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
-            echo -e "${RED}Error: ANTHROPIC_API_KEY environment variable is not set.${NC}" >&2
-            echo -e "${YELLOW}Tip: Install 'claude' CLI to avoid needing an API key.${NC}" >&2
-            exit 1
-        fi
-        echo -e "${CYAN}Using Anthropic API${NC}"
-    else
-        echo -e "${RED}Error: Unknown backend '$BACKEND'. Use 'cli' or 'api'.${NC}" >&2
+            ;;
+    esac
+
+    # Apply model override if specified
+    if [[ -n "${MODEL_OVERRIDE:-}" ]]; then
+        case "$BACKEND" in
+            claude_cli|claude_api) CLAUDE_MODEL="$MODEL_OVERRIDE" ;;
+            openai) OPENAI_MODEL="$MODEL_OVERRIDE" ;;
+            gemini) GEMINI_MODEL="$MODEL_OVERRIDE" ;;
+            ollama) OLLAMA_MODEL="$MODEL_OVERRIDE" ;;
+        esac
+    fi
+}
+
+check_curl_jq() {
+    if ! command -v curl &> /dev/null; then
+        echo -e "${RED}Error: curl is required but not installed.${NC}" >&2
+        exit 1
+    fi
+    if ! command -v jq &> /dev/null; then
+        echo -e "${RED}Error: jq is required but not installed.${NC}" >&2
         exit 1
     fi
 }
@@ -186,7 +341,7 @@ $prompt"
     # Use claude CLI in print mode (-p) for non-interactive use
     # Redirect stdin from /dev/null to prevent reading from terminal
     local response
-    if ! response=$(claude -p "$full_prompt" < /dev/null 2>&1); then
+    if ! response=$(claude -p --model "$CLAUDE_MODEL" "$full_prompt" < /dev/null 2>&1); then
         echo -e "${RED}Claude CLI error: $response${NC}" >&2
         exit 1
     fi
@@ -196,24 +351,24 @@ $prompt"
 
 # Call Claude API
 call_claude_api() {
-    local messages_json="$1"
+    local prompt="$1"
     local system_prompt
     system_prompt=$(build_system_prompt)
 
     local request_body
     request_body=$(jq -n \
-        --arg model "$MODEL" \
+        --arg model "$CLAUDE_MODEL" \
         --arg system "$system_prompt" \
-        --argjson messages "$messages_json" \
+        --arg content "$prompt" \
         '{
             model: $model,
             max_tokens: 1024,
             system: $system,
-            messages: $messages
+            messages: [{"role": "user", "content": $content}]
         }')
 
     local response
-    response=$(curl -s -X POST "$API_URL" \
+    response=$(curl -s -X POST "$CLAUDE_API_URL" \
         -H "Content-Type: application/json" \
         -H "x-api-key: $ANTHROPIC_API_KEY" \
         -H "anthropic-version: 2023-06-01" \
@@ -225,7 +380,7 @@ call_claude_api() {
     if [[ -n "$error_type" ]]; then
         local error_message
         error_message=$(echo "$response" | jq -r '.error.message // "Unknown error"')
-        echo -e "${RED}API Error ($error_type): $error_message${NC}" >&2
+        echo -e "${RED}Claude API Error ($error_type): $error_message${NC}" >&2
         exit 1
     fi
 
@@ -233,17 +388,145 @@ call_claude_api() {
     echo "$response" | jq -r '.content[0].text'
 }
 
-# Unified call function that dispatches to the right backend
-call_claude() {
-    if [[ "$BACKEND" == "cli" ]]; then
-        # For CLI, we pass the full prompt as a single string
-        local prompt="$1"
-        call_claude_cli "$prompt"
-    else
-        # For API, we pass JSON messages
-        local messages_json="$1"
-        call_claude_api "$messages_json"
+# Call OpenAI API (also works with compatible endpoints)
+call_openai() {
+    local prompt="$1"
+    local system_prompt
+    system_prompt=$(build_system_prompt)
+
+    local request_body
+    request_body=$(jq -n \
+        --arg model "$OPENAI_MODEL" \
+        --arg system "$system_prompt" \
+        --arg content "$prompt" \
+        '{
+            model: $model,
+            max_tokens: 1024,
+            messages: [
+                {"role": "system", "content": $system},
+                {"role": "user", "content": $content}
+            ]
+        }')
+
+    local response
+    response=$(curl -s -X POST "$OPENAI_API_URL" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $OPENAI_API_KEY" \
+        -d "$request_body")
+
+    # Check for errors
+    local error_message
+    error_message=$(echo "$response" | jq -r '.error.message // empty')
+    if [[ -n "$error_message" ]]; then
+        echo -e "${RED}OpenAI API Error: $error_message${NC}" >&2
+        exit 1
     fi
+
+    # Extract the text content
+    echo "$response" | jq -r '.choices[0].message.content'
+}
+
+# Call Google Gemini API
+call_gemini() {
+    local prompt="$1"
+    local system_prompt
+    system_prompt=$(build_system_prompt)
+
+    local full_prompt="$system_prompt
+
+$prompt"
+
+    local request_body
+    request_body=$(jq -n \
+        --arg content "$full_prompt" \
+        '{
+            contents: [{"parts": [{"text": $content}]}],
+            generationConfig: {
+                maxOutputTokens: 1024
+            }
+        }')
+
+    local url="${GEMINI_API_URL}/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}"
+
+    local response
+    response=$(curl -s -X POST "$url" \
+        -H "Content-Type: application/json" \
+        -d "$request_body")
+
+    # Check for errors
+    local error_message
+    error_message=$(echo "$response" | jq -r '.error.message // empty')
+    if [[ -n "$error_message" ]]; then
+        echo -e "${RED}Gemini API Error: $error_message${NC}" >&2
+        exit 1
+    fi
+
+    # Extract the text content
+    echo "$response" | jq -r '.candidates[0].content.parts[0].text'
+}
+
+# Call Ollama API
+call_ollama() {
+    local prompt="$1"
+    local system_prompt
+    system_prompt=$(build_system_prompt)
+
+    local request_body
+    request_body=$(jq -n \
+        --arg model "$OLLAMA_MODEL" \
+        --arg system "$system_prompt" \
+        --arg content "$prompt" \
+        '{
+            model: $model,
+            stream: false,
+            messages: [
+                {"role": "system", "content": $system},
+                {"role": "user", "content": $content}
+            ]
+        }')
+
+    local response
+    response=$(curl -s -X POST "$OLLAMA_API_URL" \
+        -H "Content-Type: application/json" \
+        -d "$request_body")
+
+    # Check for errors
+    local error_message
+    error_message=$(echo "$response" | jq -r '.error // empty')
+    if [[ -n "$error_message" ]]; then
+        echo -e "${RED}Ollama Error: $error_message${NC}" >&2
+        exit 1
+    fi
+
+    # Extract the text content
+    echo "$response" | jq -r '.message.content'
+}
+
+# Unified call function that dispatches to the right backend
+call_llm() {
+    local prompt="$1"
+
+    case "$BACKEND" in
+        claude_cli)
+            call_claude_cli "$prompt"
+            ;;
+        claude_api)
+            call_claude_api "$prompt"
+            ;;
+        openai)
+            call_openai "$prompt"
+            ;;
+        gemini)
+            call_gemini "$prompt"
+            ;;
+        ollama)
+            call_ollama "$prompt"
+            ;;
+        *)
+            echo -e "${RED}Error: Unknown backend '$BACKEND'${NC}" >&2
+            exit 1
+            ;;
+    esac
 }
 
 # Parse commit messages from Claude's response
@@ -334,6 +617,7 @@ do_commit() {
 
 # Main function
 main() {
+    parse_args "$@"
     check_requirements
     check_git_repo
     check_staged_changes
@@ -361,41 +645,27 @@ main() {
         last_15_titles="No previous commits"
     fi
 
-    # Build conversation history for multi-turn refinement
-    # For API: JSON array of messages
-    # For CLI: plain text conversation history
-    local conversation_history="[]"
-    local conversation_text=""
+    # Build conversation for multi-turn refinement
+    local conversation_context=""
     local current_suggestions=()
     local initial_prompt
     initial_prompt=$(build_user_message "$staged_diff" "$last_3_commits" "$last_15_titles" "$NUM_SUGGESTIONS")
 
     while true; do
-        echo -e "${CYAN}Asking Claude for commit message suggestions...${NC}"
+        echo -e "${CYAN}Asking LLM for commit message suggestions...${NC}"
 
         local response
+        local full_prompt
 
-        if [[ "$BACKEND" == "cli" ]]; then
-            # CLI: pass full conversation as text
-            response=$(call_claude "$conversation_text$initial_prompt")
+        if [[ -z "$conversation_context" ]]; then
+            full_prompt="$initial_prompt"
         else
-            # API: build JSON messages
-            local user_message
-            if [[ "$conversation_history" == "[]" ]]; then
-                user_message="$initial_prompt"
-            else
-                # Get the last user message from history
-                user_message=$(echo "$conversation_history" | jq -r '.[-1].content')
-            fi
+            full_prompt="$conversation_context
 
-            # Add user message to history
-            conversation_history=$(echo "$conversation_history" | jq --arg content "$user_message" '. + [{"role": "user", "content": $content}]')
-
-            response=$(call_claude "$conversation_history")
-
-            # Add assistant response to history
-            conversation_history=$(echo "$conversation_history" | jq --arg content "$response" '. + [{"role": "assistant", "content": $content}]')
+$initial_prompt"
         fi
+
+        response=$(call_llm "$full_prompt")
 
         # Parse messages
         readarray -t current_suggestions < <(parse_messages "$response")
@@ -478,28 +748,17 @@ main() {
         # Otherwise, treat as feedback for refinement
         echo -e "${CYAN}Refining suggestions based on your feedback...${NC}"
 
-        local refinement_message="Based on my feedback: $input
-
-Please suggest $NUM_SUGGESTIONS improved commit messages."
-
-        if [[ "$BACKEND" == "cli" ]]; then
-            # CLI: append to conversation text and include previous suggestions
-            conversation_text="$conversation_text$initial_prompt
-
-Previous suggestions:
+        # Build conversation context with previous suggestions and feedback
+        conversation_context="Previous suggestions:
 $(printf '%s\n' "${current_suggestions[@]}" | nl -w1 -s'. ')
 
 User feedback: $input
 
 "
-            # Update initial_prompt for next iteration
-            initial_prompt="Please suggest $NUM_SUGGESTIONS improved commit messages based on the feedback above."
-        else
-            # API: add refinement to conversation
-            conversation_history=$(echo "$conversation_history" | jq --arg content "$refinement_message" '. + [{"role": "user", "content": $content}]')
-        fi
+        # Update initial_prompt for next iteration
+        initial_prompt="Based on the feedback above, please suggest $NUM_SUGGESTIONS improved commit messages."
 
-        # The next iteration of the loop will call Claude again
+        # The next iteration of the loop will call the LLM again
     done
 }
 
