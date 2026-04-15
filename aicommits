@@ -3,6 +3,8 @@ set -euo pipefail
 
 # Configuration
 NUM_SUGGESTIONS="${AICOMMITS_NUM_SUGGESTIONS:-3}"
+NUM_CONTEXT_COMMITS="${AICOMMITS_CONTEXT_COMMITS:-0}"
+NUM_TITLE_COMMITS="${AICOMMITS_TITLE_COMMITS:-15}"
 
 # Model defaults per backend (fast models for quick responses)
 CLAUDE_CLI_MODEL="${AICOMMITS_CLAUDE_MODEL:-haiku}"
@@ -45,13 +47,17 @@ Backend options (mutually exclusive):
   --ollama          Use local Ollama server
 
 Other options:
-  -n, --num <N>     Number of suggestions (default: 3)
-  --model <model>   Override the model for the selected backend
-  -h, --help        Show this help message
+  -n, --num <N>             Number of suggestions (default: 3)
+  -t, --title-commits <N>   Number of recent commit titles for style reference (default: 15)
+  -c, --context-commits <N> Number of recent commits with full diffs (default: 0)
+  --model <model>           Override the model for the selected backend
+  -h, --help                Show this help message
 
 Environment variables:
   AICOMMITS_BACKEND          Backend to use (claude_cli, claude_api, openai, gemini, ollama)
   AICOMMITS_NUM_SUGGESTIONS  Number of suggestions (default: 3)
+  AICOMMITS_TITLE_COMMITS    Number of recent commit titles for style (default: 15)
+  AICOMMITS_CONTEXT_COMMITS  Number of recent commits with full diffs (default: 0)
   AICOMMITS_CLAUDE_MODEL     Claude model (default: haiku for CLI, claude-haiku-4-5-20251001 for API)
   AICOMMITS_OPENAI_MODEL     OpenAI model (default: gpt-4o-mini)
   AICOMMITS_GEMINI_MODEL     Gemini model (default: gemini-2.0-flash)
@@ -90,6 +96,14 @@ parse_args() {
                 ;;
             -n|--num)
                 NUM_SUGGESTIONS="$2"
+                shift 2
+                ;;
+            -c|--context-commits)
+                NUM_CONTEXT_COMMITS="$2"
+                shift 2
+                ;;
+            -t|--title-commits)
+                NUM_TITLE_COMMITS="$2"
                 shift 2
                 ;;
             --model)
@@ -238,37 +252,6 @@ check_staged_changes() {
     fi
 }
 
-# Gather git data
-gather_git_data() {
-    local staged_diff last_3_commits last_15_titles
-
-    # Get staged changes
-    staged_diff=$(git diff --cached --stat && echo "---" && git diff --cached)
-
-    # Get full data for last 3 commits (if they exist)
-    local commit_count
-    commit_count=$(git rev-list --count HEAD 2>/dev/null || echo "0")
-
-    if [[ "$commit_count" -gt 0 ]]; then
-        local num_to_show=$((commit_count < 3 ? commit_count : 3))
-        last_3_commits=$(git log -n "$num_to_show" --pretty=format:"=== Commit: %h ===%nAuthor: %an%nDate: %ad%nMessage: %s%n%b" --patch)
-    else
-        last_3_commits="No previous commits"
-    fi
-
-    # Get titles of last 15 commits (if they exist)
-    if [[ "$commit_count" -gt 0 ]]; then
-        local titles_to_show=$((commit_count < 15 ? commit_count : 15))
-        last_15_titles=$(git log -n "$titles_to_show" --pretty=format:"%h %s")
-    else
-        last_15_titles="No previous commits"
-    fi
-
-    echo "STAGED_DIFF:$staged_diff"
-    echo "LAST_3_COMMITS:$last_3_commits"
-    echo "LAST_15_TITLES:$last_15_titles"
-}
-
 # Escape string for JSON
 json_escape() {
     printf '%s' "$1" | jq -Rs '.'
@@ -296,35 +279,35 @@ EOF
 # Build the user message
 build_user_message() {
     local staged_diff="$1"
-    local last_3_commits="$2"
-    local last_15_titles="$3"
+    local title_commits="$2"
+    local context_commits="$3"
     local num_suggestions="$4"
-    local refinement="${5:-}"
 
     local message="Please suggest $num_suggestions commit messages for the following staged changes.
 
 ## Staged Changes
 \`\`\`
 $staged_diff
-\`\`\`
-
-## Last 15 Commit Titles (for style reference)
-\`\`\`
-$last_15_titles
-\`\`\`
-
-## Last 3 Full Commits (for context)
-\`\`\`
-$last_3_commits
 \`\`\`"
 
-    if [[ -n "$refinement" ]]; then
+    # Only include titles section if title_commits is non-empty
+    if [[ -n "$title_commits" ]]; then
         message="$message
 
-## User Feedback
-The user provided this feedback on the previous suggestions: $refinement
+## Recent Commit Titles (for style reference)
+\`\`\`
+$title_commits
+\`\`\`"
+    fi
 
-Please generate $num_suggestions improved commit message suggestions based on this feedback."
+    # Only include full commits section if context_commits is non-empty
+    if [[ -n "$context_commits" ]]; then
+        message="$message
+
+## Recent Commits with Diffs (for context)
+\`\`\`
+$context_commits
+\`\`\`"
     fi
 
     echo "$message"
@@ -625,31 +608,33 @@ main() {
     check_staged_changes
 
     # Gather git data
-    local staged_diff last_3_commits last_15_titles
+    local staged_diff title_commits context_commits
     staged_diff=$(git diff --cached --stat && echo "---" && git diff --cached)
 
     local commit_count
     commit_count=$(git rev-list --count HEAD 2>/dev/null || echo "0")
 
-    if [[ "$commit_count" -gt 0 ]]; then
-        local num_to_show=$((commit_count < 3 ? commit_count : 3))
-        last_3_commits=$(git log -n "$num_to_show" --pretty=format:"=== Commit: %h ===%nAuthor: %an%nDate: %ad%nMessage: %s%n%b" --patch)
+    # Get commit titles for style reference if requested
+    if [[ "$NUM_TITLE_COMMITS" -gt 0 && "$commit_count" -gt 0 ]]; then
+        local titles_to_show=$((commit_count < NUM_TITLE_COMMITS ? commit_count : NUM_TITLE_COMMITS))
+        title_commits=$(git log -n "$titles_to_show" --pretty=format:"%h %s")
     else
-        last_3_commits="No previous commits"
+        title_commits=""
     fi
 
-    if [[ "$commit_count" -gt 0 ]]; then
-        local titles_to_show=$((commit_count < 15 ? commit_count : 15))
-        last_15_titles=$(git log -n "$titles_to_show" --pretty=format:"%h %s")
+    # Get full commits with diffs if requested
+    if [[ "$NUM_CONTEXT_COMMITS" -gt 0 && "$commit_count" -gt 0 ]]; then
+        local num_to_show=$((commit_count < NUM_CONTEXT_COMMITS ? commit_count : NUM_CONTEXT_COMMITS))
+        context_commits=$(git log -n "$num_to_show" --pretty=format:"=== Commit: %h ===%nMessage: %s%n%b" --patch)
     else
-        last_15_titles="No previous commits"
+        context_commits=""
     fi
 
     # Build conversation for multi-turn refinement
     local conversation_context=""
     local current_suggestions=()
     local initial_prompt
-    initial_prompt=$(build_user_message "$staged_diff" "$last_3_commits" "$last_15_titles" "$NUM_SUGGESTIONS")
+    initial_prompt=$(build_user_message "$staged_diff" "$title_commits" "$context_commits" "$NUM_SUGGESTIONS")
 
     while true; do
         local response
