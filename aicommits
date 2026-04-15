@@ -305,6 +305,8 @@ build_user_message() {
 
     local message="Please suggest $num_suggestions commit messages for the following staged changes.
 
+- You should only use conventional commits format if recent commits use conventional commits, otherwise you should NOT use conventional commits format.
+
 ## Staged Changes
 \`\`\`
 $staged_diff
@@ -555,7 +557,8 @@ parse_messages() {
 # Display commit message suggestions
 display_suggestions() {
     local -n msgs=$1
-    echo -e "\n${BOLD}${CYAN}Suggested commit messages:${NC}\n"
+    local elapsed="$2"
+    echo -e "\n${BOLD}${CYAN}Suggested commit messages (${elapsed}s):${NC}\n"
     for i in "${!msgs[@]}"; do
         local num=$((i + 1))
         echo -e "  ${BOLD}${GREEN}$num.${NC} ${msgs[$i]}"
@@ -668,8 +671,10 @@ main() {
 
     echo -e "${CYAN}Asking ${BACKEND_DISPLAY} (${prompt_size_kb} KB)...${NC}"
 
-    local response
+    local start_time response elapsed
+    start_time=$(date +%s)
     response=$(call_llm "$prompt")
+    elapsed=$(($(date +%s) - start_time))
 
     # Parse messages
     readarray -t suggestions < <(parse_messages "$response")
@@ -680,7 +685,7 @@ main() {
         exit 1
     fi
 
-    display_suggestions suggestions
+    display_suggestions suggestions "$elapsed"
 
     # Prompt user
     echo -e "${BOLD}[Enter]${NC} first  ${BOLD}[N]${NC} select  ${BOLD}[e/e N]${NC} edit  ${BOLD}[q]${NC} quit  ${BOLD}[text]${NC} use as message"
