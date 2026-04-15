@@ -661,7 +661,7 @@ edit_message() {
     local editor_cmd
     editor_cmd=$(get_editor)
 
-    $editor_cmd "$tmpfile"
+    $editor_cmd "$tmpfile" < /dev/tty > /dev/tty
 
     local edited_message
     edited_message=$(cat "$tmpfile")
