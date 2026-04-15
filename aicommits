@@ -146,7 +146,7 @@ check_requirements() {
                 echo -e "${RED}Error: 'claude' CLI not found.${NC}" >&2
                 exit 1
             fi
-            echo -e "${CYAN}Using Claude CLI (local, privacy-preserving)${NC}"
+            BACKEND_DISPLAY="Claude CLI"
             ;;
         claude_api)
             check_curl_jq
@@ -154,7 +154,7 @@ check_requirements() {
                 echo -e "${RED}Error: ANTHROPIC_API_KEY environment variable is not set.${NC}" >&2
                 exit 1
             fi
-            echo -e "${CYAN}Using Claude API${NC}"
+            BACKEND_DISPLAY="Claude API ($CLAUDE_MODEL)"
             ;;
         openai)
             check_curl_jq
@@ -162,7 +162,7 @@ check_requirements() {
                 echo -e "${RED}Error: OPENAI_API_KEY environment variable is not set.${NC}" >&2
                 exit 1
             fi
-            echo -e "${CYAN}Using OpenAI API ($OPENAI_MODEL)${NC}"
+            BACKEND_DISPLAY="OpenAI ($OPENAI_MODEL)"
             ;;
         gemini)
             check_curl_jq
@@ -170,7 +170,7 @@ check_requirements() {
                 echo -e "${RED}Error: GEMINI_API_KEY environment variable is not set.${NC}" >&2
                 exit 1
             fi
-            echo -e "${CYAN}Using Google Gemini API ($GEMINI_MODEL)${NC}"
+            BACKEND_DISPLAY="Gemini ($GEMINI_MODEL)"
             ;;
         ollama)
             check_curl_jq
@@ -179,7 +179,7 @@ check_requirements() {
                 echo -e "${YELLOW}Make sure Ollama is running: ollama serve${NC}" >&2
                 exit 1
             fi
-            echo -e "${CYAN}Using Ollama ($OLLAMA_MODEL)${NC}"
+            BACKEND_DISPLAY="Ollama ($OLLAMA_MODEL)"
             ;;
         none)
             echo -e "${RED}Error: No backend available.${NC}" >&2
@@ -622,8 +622,6 @@ main() {
     check_git_repo
     check_staged_changes
 
-    echo -e "${CYAN}Gathering git data...${NC}"
-
     # Gather git data
     local staged_diff last_3_commits last_15_titles
     staged_diff=$(git diff --cached --stat && echo "---" && git diff --cached)
@@ -651,8 +649,15 @@ main() {
     local initial_prompt
     initial_prompt=$(build_user_message "$staged_diff" "$last_3_commits" "$last_15_titles" "$NUM_SUGGESTIONS")
 
+    local first_request=true
+
     while true; do
-        echo -e "${CYAN}Asking LLM for commit message suggestions...${NC}"
+        if [[ "$first_request" == true ]]; then
+            echo -e "${CYAN}Asking ${BACKEND_DISPLAY}...${NC}"
+            first_request=false
+        else
+            echo -e "${CYAN}Refining...${NC}"
+        fi
 
         local response
         local full_prompt
@@ -680,14 +685,7 @@ $initial_prompt"
         fi
 
         # Prompt user
-        echo -e "${BOLD}Options:${NC}"
-        echo -e "  ${GREEN}<Enter>${NC}     - Use first message"
-        echo -e "  ${GREEN}<number>${NC}   - Use that message (e.g., 2)"
-        echo -e "  ${GREEN}e${NC}          - Edit first message"
-        echo -e "  ${GREEN}e <number>${NC} - Edit that message (e.g., e 3)"
-        echo -e "  ${GREEN}q${NC}          - Quit"
-        echo -e "  ${GREEN}<text>${NC}     - Provide feedback for refinement"
-        echo ""
+        echo -e "${BOLD}[Enter]${NC} first  ${BOLD}[N]${NC} select  ${BOLD}[e/e N]${NC} edit  ${BOLD}[q]${NC} quit  ${BOLD}[text]${NC} refine"
         echo -n "> "
 
         local input
@@ -746,8 +744,6 @@ $initial_prompt"
         fi
 
         # Otherwise, treat as feedback for refinement
-        echo -e "${CYAN}Refining suggestions based on your feedback...${NC}"
-
         # Build conversation context with previous suggestions and feedback
         conversation_context="Previous suggestions:
 $(printf '%s\n' "${current_suggestions[@]}" | nl -w1 -s'. ')
