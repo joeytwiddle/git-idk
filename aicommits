@@ -6,6 +6,10 @@ NUM_SUGGESTIONS="${AICOMMITS_NUM_SUGGESTIONS:-3}"
 MODEL="${AICOMMITS_MODEL:-claude-sonnet-4-20250514}"
 API_URL="https://api.anthropic.com/v1/messages"
 
+# Backend selection: "cli" (claude command) or "api" (direct API)
+# Auto-detected, but can be forced with AICOMMITS_BACKEND
+BACKEND="${AICOMMITS_BACKEND:-auto}"
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -15,22 +19,48 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
+# Detect which backend to use
+detect_backend() {
+    if [[ "$BACKEND" != "auto" ]]; then
+        echo "$BACKEND"
+        return
+    fi
+
+    if command -v claude &> /dev/null; then
+        echo "cli"
+    else
+        echo "api"
+    fi
+}
+
 # Check for required tools
 check_requirements() {
-    if ! command -v curl &> /dev/null; then
-        echo -e "${RED}Error: curl is required but not installed.${NC}" >&2
-        exit 1
-    fi
-    if ! command -v jq &> /dev/null; then
-        echo -e "${RED}Error: jq is required but not installed.${NC}" >&2
-        exit 1
-    fi
     if ! command -v git &> /dev/null; then
         echo -e "${RED}Error: git is required but not installed.${NC}" >&2
         exit 1
     fi
-    if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
-        echo -e "${RED}Error: ANTHROPIC_API_KEY environment variable is not set.${NC}" >&2
+
+    BACKEND=$(detect_backend)
+
+    if [[ "$BACKEND" == "cli" ]]; then
+        echo -e "${CYAN}Using Claude CLI (local, privacy-preserving)${NC}"
+    elif [[ "$BACKEND" == "api" ]]; then
+        if ! command -v curl &> /dev/null; then
+            echo -e "${RED}Error: curl is required but not installed.${NC}" >&2
+            exit 1
+        fi
+        if ! command -v jq &> /dev/null; then
+            echo -e "${RED}Error: jq is required but not installed.${NC}" >&2
+            exit 1
+        fi
+        if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+            echo -e "${RED}Error: ANTHROPIC_API_KEY environment variable is not set.${NC}" >&2
+            echo -e "${YELLOW}Tip: Install 'claude' CLI to avoid needing an API key.${NC}" >&2
+            exit 1
+        fi
+        echo -e "${CYAN}Using Anthropic API${NC}"
+    else
+        echo -e "${RED}Error: Unknown backend '$BACKEND'. Use 'cli' or 'api'.${NC}" >&2
         exit 1
     fi
 }
@@ -143,8 +173,29 @@ Please generate $num_suggestions improved commit message suggestions based on th
     echo "$message"
 }
 
+# Call Claude via CLI
+call_claude_cli() {
+    local prompt="$1"
+    local system_prompt
+    system_prompt=$(build_system_prompt)
+
+    local full_prompt="$system_prompt
+
+$prompt"
+
+    # Use claude CLI in print mode (-p) for non-interactive use
+    # Redirect stdin from /dev/null to prevent reading from terminal
+    local response
+    if ! response=$(claude -p "$full_prompt" < /dev/null 2>&1); then
+        echo -e "${RED}Claude CLI error: $response${NC}" >&2
+        exit 1
+    fi
+
+    echo "$response"
+}
+
 # Call Claude API
-call_claude() {
+call_claude_api() {
     local messages_json="$1"
     local system_prompt
     system_prompt=$(build_system_prompt)
@@ -180,6 +231,19 @@ call_claude() {
 
     # Extract the text content
     echo "$response" | jq -r '.content[0].text'
+}
+
+# Unified call function that dispatches to the right backend
+call_claude() {
+    if [[ "$BACKEND" == "cli" ]]; then
+        # For CLI, we pass the full prompt as a single string
+        local prompt="$1"
+        call_claude_cli "$prompt"
+    else
+        # For API, we pass JSON messages
+        local messages_json="$1"
+        call_claude_api "$messages_json"
+    fi
 }
 
 # Parse commit messages from Claude's response
@@ -298,32 +362,40 @@ main() {
     fi
 
     # Build conversation history for multi-turn refinement
+    # For API: JSON array of messages
+    # For CLI: plain text conversation history
     local conversation_history="[]"
+    local conversation_text=""
     local current_suggestions=()
+    local initial_prompt
+    initial_prompt=$(build_user_message "$staged_diff" "$last_3_commits" "$last_15_titles" "$NUM_SUGGESTIONS")
 
     while true; do
         echo -e "${CYAN}Asking Claude for commit message suggestions...${NC}"
 
-        # Build user message
-        local user_message
-        if [[ "$conversation_history" == "[]" ]]; then
-            user_message=$(build_user_message "$staged_diff" "$last_3_commits" "$last_15_titles" "$NUM_SUGGESTIONS")
-        else
-            # Get the last refinement from history
-            local last_user_msg
-            last_user_msg=$(echo "$conversation_history" | jq -r '.[-1].content')
-            user_message="$last_user_msg"
-        fi
-
-        # Add user message to history
-        conversation_history=$(echo "$conversation_history" | jq --arg content "$user_message" '. + [{"role": "user", "content": $content}]')
-
-        # Call Claude
         local response
-        response=$(call_claude "$conversation_history")
 
-        # Add assistant response to history
-        conversation_history=$(echo "$conversation_history" | jq --arg content "$response" '. + [{"role": "assistant", "content": $content}]')
+        if [[ "$BACKEND" == "cli" ]]; then
+            # CLI: pass full conversation as text
+            response=$(call_claude "$conversation_text$initial_prompt")
+        else
+            # API: build JSON messages
+            local user_message
+            if [[ "$conversation_history" == "[]" ]]; then
+                user_message="$initial_prompt"
+            else
+                # Get the last user message from history
+                user_message=$(echo "$conversation_history" | jq -r '.[-1].content')
+            fi
+
+            # Add user message to history
+            conversation_history=$(echo "$conversation_history" | jq --arg content "$user_message" '. + [{"role": "user", "content": $content}]')
+
+            response=$(call_claude "$conversation_history")
+
+            # Add assistant response to history
+            conversation_history=$(echo "$conversation_history" | jq --arg content "$response" '. + [{"role": "assistant", "content": $content}]')
+        fi
 
         # Parse messages
         readarray -t current_suggestions < <(parse_messages "$response")
@@ -410,24 +482,24 @@ main() {
 
 Please suggest $NUM_SUGGESTIONS improved commit messages."
 
-        # Add refinement to conversation
-        conversation_history=$(echo "$conversation_history" | jq --arg content "$refinement_message" '. + [{"role": "user", "content": $content}]')
+        if [[ "$BACKEND" == "cli" ]]; then
+            # CLI: append to conversation text and include previous suggestions
+            conversation_text="$conversation_text$initial_prompt
 
-        # Call Claude again
-        response=$(call_claude "$conversation_history")
+Previous suggestions:
+$(printf '%s\n' "${current_suggestions[@]}" | nl -w1 -s'. ')
 
-        # Add response to history
-        conversation_history=$(echo "$conversation_history" | jq --arg content "$response" '. + [{"role": "assistant", "content": $content}]')
+User feedback: $input
 
-        # Parse new suggestions
-        readarray -t current_suggestions < <(parse_messages "$response")
-
-        if [[ ${#current_suggestions[@]} -eq 0 ]]; then
-            echo -e "${YELLOW}Could not parse commit messages from response:${NC}"
-            echo "$response"
+"
+            # Update initial_prompt for next iteration
+            initial_prompt="Please suggest $NUM_SUGGESTIONS improved commit messages based on the feedback above."
         else
-            display_suggestions current_suggestions
+            # API: add refinement to conversation
+            conversation_history=$(echo "$conversation_history" | jq --arg content "$refinement_message" '. + [{"role": "user", "content": $content}]')
         fi
+
+        # The next iteration of the loop will call Claude again
     done
 }
 
