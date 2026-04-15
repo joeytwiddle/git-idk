@@ -8,6 +8,7 @@ set -euo pipefail
 NUM_SUGGESTIONS="${AICOMMITS_NUM_SUGGESTIONS:-${NUM_SUGGESTIONS:-3}}"
 NUM_CONTEXT_COMMITS="${AICOMMITS_CONTEXT_COMMITS:-${NUM_CONTEXT_COMMITS:-0}}"
 NUM_TITLE_COMMITS="${AICOMMITS_TITLE_COMMITS:-${NUM_TITLE_COMMITS:-15}}"
+STAGE_ALL=false
 
 # Model defaults per backend (fast models for quick responses)
 CLAUDE_CLI_MODEL="${AICOMMITS_CLAUDE_MODEL:-${CLAUDE_CLI_MODEL:-haiku}}"
@@ -50,6 +51,7 @@ Backend options (mutually exclusive):
   --ollama          Use local Ollama server
 
 Other options:
+  -a, --all                 Stage all modified/deleted files before committing
   -n, --num <N>             Number of suggestions (default: 3)
   -t, --title-commits <N>   Number of recent commit titles for style reference (default: 15)
   -c, --context-commits <N> Number of recent commits with full diffs (default: 0)
@@ -98,6 +100,10 @@ parse_args() {
                 ;;
             --ollama)
                 BACKEND="ollama"
+                shift
+                ;;
+            -a|--all)
+                STAGE_ALL=true
                 shift
                 ;;
             -n|--num)
@@ -250,11 +256,19 @@ check_git_repo() {
     fi
 }
 
-# Check if there are staged changes
+# Check if there are changes to commit
 check_staged_changes() {
-    if git diff --cached --quiet; then
-        echo -e "${RED}Error: No staged changes to commit.${NC}" >&2
-        exit 1
+    if [[ "$STAGE_ALL" == true ]]; then
+        # Check for any tracked file changes (staged or unstaged)
+        if git diff --quiet && git diff --cached --quiet; then
+            echo -e "${RED}Error: No changes to commit.${NC}" >&2
+            exit 1
+        fi
+    else
+        if git diff --cached --quiet; then
+            echo -e "${RED}Error: No staged changes to commit.${NC}" >&2
+            exit 1
+        fi
     fi
 }
 
@@ -596,7 +610,10 @@ edit_message() {
 # Commit with message
 do_commit() {
     local message="$1"
-    if git commit -m "$message"; then
+    local git_args=(-m "$message")
+    [[ "$STAGE_ALL" == true ]] && git_args=(-a "${git_args[@]}")
+
+    if git commit "${git_args[@]}"; then
         echo -e "\n${GREEN}${BOLD}Successfully committed with message:${NC}"
         echo -e "  ${message}"
         return 0
@@ -614,8 +631,13 @@ main() {
     check_staged_changes
 
     # Gather git data
-    local staged_diff title_commits context_commits
-    staged_diff=$(git diff --cached --stat && echo "---" && git diff --cached)
+    local changes_diff title_commits context_commits
+    if [[ "$STAGE_ALL" == true ]]; then
+        # Include both staged and unstaged changes for tracked files
+        changes_diff=$(git diff HEAD --stat && echo "---" && git diff HEAD)
+    else
+        changes_diff=$(git diff --cached --stat && echo "---" && git diff --cached)
+    fi
 
     local commit_count
     commit_count=$(git rev-list --count HEAD 2>/dev/null || echo "0")
@@ -638,7 +660,7 @@ main() {
 
     # Build prompt and call LLM
     local prompt suggestions
-    prompt=$(build_user_message "$staged_diff" "$title_commits" "$context_commits" "$NUM_SUGGESTIONS")
+    prompt=$(build_user_message "$changes_diff" "$title_commits" "$context_commits" "$NUM_SUGGESTIONS")
 
     # Calculate prompt size in KB
     local prompt_size_kb
