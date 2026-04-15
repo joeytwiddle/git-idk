@@ -9,6 +9,7 @@ NUM_SUGGESTIONS="${GIT_IDK_NUM_SUGGESTIONS:-${NUM_SUGGESTIONS:-3}}"
 NUM_CONTEXT_COMMITS="${GIT_IDK_CONTEXT_COMMITS:-${NUM_CONTEXT_COMMITS:-0}}"
 NUM_TITLE_COMMITS="${GIT_IDK_TITLE_COMMITS:-${NUM_TITLE_COMMITS:-15}}"
 STAGE_ALL=false
+TARGET_COMMIT=""
 
 # Model defaults per backend (fast models for quick responses)
 CLAUDE_CLI_MODEL="${GIT_IDK_CLAUDE_MODEL:-${CLAUDE_CLI_MODEL:-haiku}}"
@@ -52,6 +53,7 @@ Backend options (mutually exclusive):
 
 Other options:
   -a, --all                 Stage all modified/deleted files before committing
+  -C, --commit <ref>        Suggest messages for an existing commit (e.g., HEAD~2 or 3)
   -n, --num <N>             Number of suggestions (default: 3)
   -t, --title-commits <N>   Number of recent commit titles for style reference (default: 15)
   -c, --context-commits <N> Number of recent commits with full diffs (default: 0)
@@ -105,6 +107,10 @@ parse_args() {
             -a|--all)
                 STAGE_ALL=true
                 shift
+                ;;
+            -C|--commit)
+                TARGET_COMMIT="$2"
+                shift 2
                 ;;
             -n|--num)
                 NUM_SUGGESTIONS="$2"
@@ -256,6 +262,23 @@ check_git_repo() {
     fi
 }
 
+# Resolve commit reference (number like '3' or '-3' becomes HEAD~3)
+resolve_commit_ref() {
+    local ref="$1"
+
+    # If it's a number (positive or negative), convert to HEAD~N
+    if [[ "$ref" =~ ^-?[0-9]+$ ]]; then
+        local num="${ref#-}"  # Remove leading minus if present
+        if [[ "$num" == "0" ]]; then
+            echo "HEAD"
+        else
+            echo "HEAD~$num"
+        fi
+    else
+        echo "$ref"
+    fi
+}
+
 # Check if there are changes to commit
 check_staged_changes() {
     if [[ "$STAGE_ALL" == true ]]; then
@@ -305,7 +328,8 @@ build_user_message() {
 
     local message="Please suggest $num_suggestions commit messages for the following staged changes.
 
-- You should only use conventional commits format if recent commits use conventional commits, otherwise you should NOT use conventional commits format.
+- Follow the style of the recent commit messages.
+- You should ONLY use conventional commits format (\"feat/fix/chore: ...\") if the recent commits already use conventional commits format, otherwise you should NOT use conventional commits format.
 
 ## Staged Changes
 \`\`\`
@@ -631,15 +655,33 @@ main() {
     parse_args "$@"
     check_requirements
     check_git_repo
-    check_staged_changes
 
     # Gather git data
     local changes_diff title_commits context_commits
-    if [[ "$STAGE_ALL" == true ]]; then
-        # Include both staged and unstaged changes for tracked files
-        changes_diff=$(git diff HEAD --stat && echo "---" && git diff HEAD)
+
+    if [[ -n "$TARGET_COMMIT" ]]; then
+        # Reviewing an existing commit
+        local resolved_ref
+        resolved_ref=$(resolve_commit_ref "$TARGET_COMMIT")
+
+        # Validate commit exists
+        if ! git rev-parse --verify "$resolved_ref" &>/dev/null; then
+            echo -e "${RED}Error: Invalid commit reference: $TARGET_COMMIT${NC}" >&2
+            exit 1
+        fi
+
+        # Get diff for the target commit
+        changes_diff=$(git show --stat "$resolved_ref" && echo "---" && git show --format="" "$resolved_ref")
     else
-        changes_diff=$(git diff --cached --stat && echo "---" && git diff --cached)
+        # Normal mode: check for staged changes
+        check_staged_changes
+
+        if [[ "$STAGE_ALL" == true ]]; then
+            # Include both staged and unstaged changes for tracked files
+            changes_diff=$(git diff HEAD --stat && echo "---" && git diff HEAD)
+        else
+            changes_diff=$(git diff --cached --stat && echo "---" && git diff --cached)
+        fi
     fi
 
     local commit_count
@@ -686,6 +728,11 @@ main() {
     fi
 
     display_suggestions suggestions "$elapsed"
+
+    # If reviewing an existing commit, just exit (no prompting)
+    if [[ -n "$TARGET_COMMIT" ]]; then
+        exit 0
+    fi
 
     # Prompt user
     echo -e "${BOLD}[Enter]${NC} first  ${BOLD}[N]${NC} select  ${BOLD}[e/e N]${NC} edit  ${BOLD}[q]${NC} quit  ${BOLD}[text]${NC} use as message"
