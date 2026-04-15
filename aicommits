@@ -636,108 +636,86 @@ main() {
         context_commits=""
     fi
 
-    # Build conversation for multi-turn refinement
-    local conversation_context=""
-    local current_suggestions=()
-    local initial_prompt
-    initial_prompt=$(build_user_message "$staged_diff" "$title_commits" "$context_commits" "$NUM_SUGGESTIONS")
+    # Build prompt and call LLM
+    local prompt suggestions
+    prompt=$(build_user_message "$staged_diff" "$title_commits" "$context_commits" "$NUM_SUGGESTIONS")
 
-    while true; do
-        local response
-        local full_prompt
+    # Calculate prompt size in KB
+    local prompt_size_kb
+    prompt_size_kb=$(awk "BEGIN {printf \"%.1f\", ${#prompt} / 1024}")
 
-        if [[ -z "$conversation_context" ]]; then
-            full_prompt="$initial_prompt"
-        else
-            full_prompt="$conversation_context
+    echo -e "${CYAN}Asking ${BACKEND_DISPLAY} (${prompt_size_kb} KB)...${NC}"
 
-$initial_prompt"
-        fi
+    local response
+    response=$(call_llm "$prompt")
 
-        # Calculate prompt size in KB
-        local prompt_size_bytes=${#full_prompt}
-        local prompt_size_kb
-        prompt_size_kb=$(awk "BEGIN {printf \"%.1f\", $prompt_size_bytes / 1024}")
+    # Parse messages
+    readarray -t suggestions < <(parse_messages "$response")
 
-        echo -e "${CYAN}Asking ${BACKEND_DISPLAY} (${prompt_size_kb} KB)...${NC}"
+    if [[ ${#suggestions[@]} -eq 0 ]]; then
+        echo -e "${YELLOW}Could not parse commit messages from response:${NC}"
+        echo "$response"
+        exit 1
+    fi
 
-        response=$(call_llm "$full_prompt")
+    display_suggestions suggestions
 
-        # Parse messages
-        readarray -t current_suggestions < <(parse_messages "$response")
+    # Prompt user
+    echo -e "${BOLD}[Enter]${NC} first  ${BOLD}[N]${NC} select  ${BOLD}[e/e N]${NC} edit  ${BOLD}[q]${NC} quit  ${BOLD}[text]${NC} use as message"
+    echo -n "> "
 
-        if [[ ${#current_suggestions[@]} -eq 0 ]]; then
-            echo -e "${YELLOW}Could not parse commit messages from response:${NC}"
-            echo "$response"
-            echo ""
-            echo -e "${YELLOW}Please try again with feedback.${NC}"
-        else
-            display_suggestions current_suggestions
-        fi
+    local input
+    read -r input
 
-        # Prompt user
-        echo -e "${BOLD}[Enter]${NC} first  ${BOLD}[N]${NC} select  ${BOLD}[e/e N]${NC} edit  ${BOLD}[q]${NC} quit  ${BOLD}[text]${NC} write your own"
-        echo -n "> "
-
-        local input
-        read -r input
-
-        # Handle empty input (select first)
-        if [[ -z "$input" ]]; then
-            if [[ ${#current_suggestions[@]} -gt 0 ]]; then
-                do_commit "${current_suggestions[0]}"
-                exit 0
-            else
-                echo -e "${RED}No suggestions available.${NC}"
-                continue
-            fi
-        fi
-
-        # Handle quit
-        if [[ "$input" == "q" || "$input" == "Q" ]]; then
-            echo -e "${YELLOW}Aborted.${NC}"
-            exit 0
-        fi
-
-        # Handle edit command
-        if [[ "$input" =~ ^e[[:space:]]*([0-9]*)$ ]]; then
-            local edit_num="${BASH_REMATCH[1]:-1}"
-            local edit_idx=$((edit_num - 1))
-
-            if [[ $edit_idx -lt 0 || $edit_idx -ge ${#current_suggestions[@]} ]]; then
-                echo -e "${RED}Invalid selection: $edit_num${NC}"
-                continue
-            fi
-
-            local edited
-            edited=$(edit_message "${current_suggestions[$edit_idx]}")
-
-            if [[ -z "$edited" ]]; then
-                echo -e "${YELLOW}Empty message, commit aborted.${NC}"
-                continue
-            fi
-
-            do_commit "$edited"
-            exit 0
-        fi
-
-        # Handle number selection
-        if [[ "$input" =~ ^[0-9]+$ ]]; then
-            local select_idx=$((input - 1))
-
-            if [[ $select_idx -lt 0 || $select_idx -ge ${#current_suggestions[@]} ]]; then
-                echo -e "${RED}Invalid selection: $input${NC}"
-                continue
-            fi
-
-            do_commit "${current_suggestions[$select_idx]}"
-            exit 0
-        fi
-
-        # Otherwise, use the input directly as commit message
-        do_commit "$input"
+    # Handle empty input (select first)
+    if [[ -z "$input" ]]; then
+        do_commit "${suggestions[0]}"
         exit 0
-    done
+    fi
+
+    # Handle quit
+    if [[ "$input" == "q" || "$input" == "Q" ]]; then
+        echo -e "${YELLOW}Aborted.${NC}"
+        exit 0
+    fi
+
+    # Handle edit command
+    if [[ "$input" =~ ^e[[:space:]]*([0-9]*)$ ]]; then
+        local edit_num="${BASH_REMATCH[1]:-1}"
+        local edit_idx=$((edit_num - 1))
+
+        if [[ $edit_idx -lt 0 || $edit_idx -ge ${#suggestions[@]} ]]; then
+            echo -e "${RED}Invalid selection: $edit_num${NC}"
+            exit 1
+        fi
+
+        local edited
+        edited=$(edit_message "${suggestions[$edit_idx]}")
+
+        if [[ -z "$edited" ]]; then
+            echo -e "${YELLOW}Empty message, commit aborted.${NC}"
+            exit 1
+        fi
+
+        do_commit "$edited"
+        exit 0
+    fi
+
+    # Handle number selection
+    if [[ "$input" =~ ^[0-9]+$ ]]; then
+        local select_idx=$((input - 1))
+
+        if [[ $select_idx -lt 0 || $select_idx -ge ${#suggestions[@]} ]]; then
+            echo -e "${RED}Invalid selection: $input${NC}"
+            exit 1
+        fi
+
+        do_commit "${suggestions[$select_idx]}"
+        exit 0
+    fi
+
+    # Otherwise, use the input directly as commit message
+    do_commit "$input"
 }
 
 main "$@"
