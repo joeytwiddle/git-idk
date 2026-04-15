@@ -212,7 +212,6 @@ check_requirements() {
                 echo -e "${YELLOW}Make sure Ollama is running: ollama serve${NC}" >&2
                 exit 1
             fi
-            BACKEND_DISPLAY="Ollama ($OLLAMA_MODEL)"
             ;;
         none)
             echo -e "${RED}Error: No backend available.${NC}" >&2
@@ -241,6 +240,12 @@ check_requirements() {
             ollama) OLLAMA_MODEL="$MODEL_OVERRIDE" ;;
         esac
     fi
+
+    # For Ollama, ensure model is available (pull if needed)
+    if [[ "$BACKEND" == "ollama" ]]; then
+        ensure_ollama_model "$OLLAMA_MODEL"
+        BACKEND_DISPLAY="Ollama ($OLLAMA_MODEL)"
+    fi
 }
 
 check_curl_jq() {
@@ -250,6 +255,28 @@ check_curl_jq() {
     fi
     if ! command -v jq &> /dev/null; then
         echo -e "${RED}Error: jq is required but not installed.${NC}" >&2
+        exit 1
+    fi
+}
+
+# Ensure Ollama model is available, pull if needed
+ensure_ollama_model() {
+    local model="$1"
+    local base_url="${OLLAMA_API_URL%/api/chat}"
+
+    # Check if model exists
+    local models
+    models=$(curl -s "$base_url/api/tags" | jq -r '.models[].name' 2>/dev/null)
+
+    # Model names can be "llama3.2" or "llama3.2:latest" - check both forms
+    if echo "$models" | grep -qE "^${model}(:latest)?$"; then
+        return 0
+    fi
+
+    # Model not found, pull it
+    echo -e "${CYAN}Pulling Ollama model: $model${NC}"
+    if ! ollama pull "$model"; then
+        echo -e "${RED}Failed to pull model: $model${NC}" >&2
         exit 1
     fi
 }
