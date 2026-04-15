@@ -343,14 +343,15 @@ build_system_prompt() {
     cat << 'EOF'
 You are a helpful assistant that generates git commit messages. Based on the staged changes and commit history provided, suggest commit messages that:
 
-1. Follow conventional commit format when appropriate (feat:, fix:, docs:, refactor:, test:, chore:, etc.)
+1. Only use conventional commit format (feat:, fix:, docs:, refactor:, test:, chore:, etc.) when OTHER commit messages have also been using this form
 2. Are concise but descriptive (ideally under 72 characters for the first line)
 3. Match the style and conventions used in the repository's existing commits
 4. Describe WHAT changed and WHY, not HOW
+5. Use imperative language
 
 When asked to refine, consider the user's feedback and generate improved suggestions.
 
-IMPORTANT: Output ONLY the commit messages, one per line, numbered. Do not include any other text, explanations, or formatting. Example output format:
+IMPORTANT: Output ONLY the commit messages, one per line, numbered. Do not include any other text, explanations, or formatting. Example output format (do not use these for example text!):
 1. feat: add user authentication flow
 2. feat(auth): implement login and signup functionality
 3. Add authentication system with JWT tokens
@@ -367,19 +368,17 @@ build_user_message() {
 
     local message="Please suggest $num_suggestions commit messages for the following staged changes.
 
-- Follow the style of the recent commit messages.
-- You should ONLY use conventional commits format (\"feat/fix/chore: ...\") if the recent commits already use conventional commits format, otherwise you should NOT use conventional commits format.
-
 ## Staged Changes (this is what you need to generate a commit message for)
 \`\`\`
 $staged_diff
-\`\`\`"
+\`\`\`
+## End of staged changes (you MUST NOT describe or summarize the things you see below)"
 
     # Only include titles section if title_commits is non-empty
     if [[ -n "$title_commits" ]]; then
         message="$message
 
-## Context: Recent Commit Titles (for style reference)
+## Context: Recent Commit Titles (for style reference and context)
 \`\`\`
 $title_commits
 \`\`\`"
