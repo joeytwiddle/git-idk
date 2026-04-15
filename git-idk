@@ -2,30 +2,30 @@
 set -euo pipefail
 
 # Source config file if it exists (before setting defaults)
-[[ -f ~/.config/aicommits.conf ]] && source ~/.config/aicommits.conf
+[[ -f ~/.config/git-idk.conf ]] && source ~/.config/git-idk.conf
 
 # Configuration (env vars override config file)
-NUM_SUGGESTIONS="${AICOMMITS_NUM_SUGGESTIONS:-${NUM_SUGGESTIONS:-3}}"
-NUM_CONTEXT_COMMITS="${AICOMMITS_CONTEXT_COMMITS:-${NUM_CONTEXT_COMMITS:-0}}"
-NUM_TITLE_COMMITS="${AICOMMITS_TITLE_COMMITS:-${NUM_TITLE_COMMITS:-15}}"
+NUM_SUGGESTIONS="${GIT_IDK_NUM_SUGGESTIONS:-${NUM_SUGGESTIONS:-3}}"
+NUM_CONTEXT_COMMITS="${GIT_IDK_CONTEXT_COMMITS:-${NUM_CONTEXT_COMMITS:-0}}"
+NUM_TITLE_COMMITS="${GIT_IDK_TITLE_COMMITS:-${NUM_TITLE_COMMITS:-15}}"
 STAGE_ALL=false
 
 # Model defaults per backend (fast models for quick responses)
-CLAUDE_CLI_MODEL="${AICOMMITS_CLAUDE_MODEL:-${CLAUDE_CLI_MODEL:-haiku}}"
-CLAUDE_API_MODEL="${AICOMMITS_CLAUDE_MODEL:-${CLAUDE_API_MODEL:-claude-haiku-4-5-20251001}}"
-OPENAI_MODEL="${AICOMMITS_OPENAI_MODEL:-${OPENAI_MODEL:-gpt-4o-mini}}"
-GEMINI_MODEL="${AICOMMITS_GEMINI_MODEL:-${GEMINI_MODEL:-gemini-2.0-flash}}"
-OLLAMA_MODEL="${AICOMMITS_OLLAMA_MODEL:-${OLLAMA_MODEL:-llama3.2}}"
+CLAUDE_CLI_MODEL="${GIT_IDK_CLAUDE_MODEL:-${CLAUDE_CLI_MODEL:-haiku}}"
+CLAUDE_API_MODEL="${GIT_IDK_CLAUDE_MODEL:-${CLAUDE_API_MODEL:-claude-haiku-4-5-20251001}}"
+OPENAI_MODEL="${GIT_IDK_OPENAI_MODEL:-${OPENAI_MODEL:-gpt-4o-mini}}"
+GEMINI_MODEL="${GIT_IDK_GEMINI_MODEL:-${GEMINI_MODEL:-gemini-2.0-flash}}"
+OLLAMA_MODEL="${GIT_IDK_OLLAMA_MODEL:-${OLLAMA_MODEL:-llama3.2}}"
 
 # API endpoints
 CLAUDE_API_URL="${CLAUDE_API_URL:-https://api.anthropic.com/v1/messages}"
-OPENAI_API_URL="${AICOMMITS_OPENAI_URL:-${OPENAI_API_URL:-https://api.openai.com/v1/chat/completions}}"
+OPENAI_API_URL="${GIT_IDK_OPENAI_URL:-${OPENAI_API_URL:-https://api.openai.com/v1/chat/completions}}"
 GEMINI_API_URL="${GEMINI_API_URL:-https://generativelanguage.googleapis.com/v1beta/models}"
-OLLAMA_API_URL="${AICOMMITS_OLLAMA_URL:-${OLLAMA_API_URL:-http://localhost:11434/api/chat}}"
+OLLAMA_API_URL="${GIT_IDK_OLLAMA_URL:-${OLLAMA_API_URL:-http://localhost:11434/api/chat}}"
 
 # Backend selection: claude_cli, claude_api, openai, gemini, ollama
-# Auto-detected, but can be forced with AICOMMITS_BACKEND or CLI flags
-BACKEND="${AICOMMITS_BACKEND:-${BACKEND:-auto}}"
+# Auto-detected, but can be forced with GIT_IDK_BACKEND or CLI flags
+BACKEND="${GIT_IDK_BACKEND:-${BACKEND:-auto}}"
 
 # Colors
 RED='\033[0;31m'
@@ -39,7 +39,7 @@ NC='\033[0m' # No Color
 # Show usage
 show_usage() {
     cat << 'EOF'
-Usage: aicommits [options]
+Usage: git-idk [options]
 
 Generate AI-powered commit messages for staged changes.
 
@@ -59,22 +59,22 @@ Other options:
   -h, --help                Show this help message
 
 Environment variables:
-  AICOMMITS_BACKEND          Backend to use (claude_cli, claude_api, openai, gemini, ollama)
-  AICOMMITS_NUM_SUGGESTIONS  Number of suggestions (default: 3)
-  AICOMMITS_TITLE_COMMITS    Number of recent commit titles for style (default: 15)
-  AICOMMITS_CONTEXT_COMMITS  Number of recent commits with full diffs (default: 0)
-  AICOMMITS_CLAUDE_MODEL     Claude model (default: haiku for CLI, claude-haiku-4-5-20251001 for API)
-  AICOMMITS_OPENAI_MODEL     OpenAI model (default: gpt-4o-mini)
-  AICOMMITS_GEMINI_MODEL     Gemini model (default: gemini-2.0-flash)
-  AICOMMITS_OLLAMA_MODEL     Ollama model (default: llama3.2)
-  AICOMMITS_OPENAI_URL       OpenAI-compatible endpoint URL
-  AICOMMITS_OLLAMA_URL       Ollama server URL (default: http://localhost:11434/api/chat)
+  GIT_IDK_BACKEND          Backend to use (claude_cli, claude_api, openai, gemini, ollama)
+  GIT_IDK_NUM_SUGGESTIONS  Number of suggestions (default: 3)
+  GIT_IDK_TITLE_COMMITS    Number of recent commit titles for style (default: 15)
+  GIT_IDK_CONTEXT_COMMITS  Number of recent commits with full diffs (default: 0)
+  GIT_IDK_CLAUDE_MODEL     Claude model (default: haiku for CLI, claude-haiku-4-5-20251001 for API)
+  GIT_IDK_OPENAI_MODEL     OpenAI model (default: gpt-4o-mini)
+  GIT_IDK_GEMINI_MODEL     Gemini model (default: gemini-2.0-flash)
+  GIT_IDK_OLLAMA_MODEL     Ollama model (default: llama3.2)
+  GIT_IDK_OPENAI_URL       OpenAI-compatible endpoint URL
+  GIT_IDK_OLLAMA_URL       Ollama server URL (default: http://localhost:11434/api/chat)
   ANTHROPIC_API_KEY          API key for Claude API
   OPENAI_API_KEY             API key for OpenAI
   GEMINI_API_KEY             API key for Google Gemini
 
 Config file:
-  ~/.config/aicommits.conf   Sourced at startup (set variables like NUM_SUGGESTIONS=5)
+  ~/.config/git-idk.conf   Sourced at startup (set variables like NUM_SUGGESTIONS=5)
 EOF
 }
 
