@@ -735,48 +735,58 @@ main() {
         context_commits=""
     fi
 
-    # Build prompt and call LLM
-    local prompt suggestions
-    prompt=$(build_user_message "$changes_diff" "$title_commits" "$context_commits" "$NUM_SUGGESTIONS")
+    local prompt suggestions input
 
-    # Calculate prompt size in KB
-    local prompt_size_kb
-    prompt_size_kb=$(awk "BEGIN {printf \"%.1f\", ${#prompt} / 1024}")
+    while true; do
+        # Build prompt and call LLM
+        prompt=$(build_user_message "$changes_diff" "$title_commits" "$context_commits" "$NUM_SUGGESTIONS")
 
-    echo -e "${CYAN}Asking ${BACKEND_DISPLAY} (${prompt_size_kb} KB)...${NC}"
+        # Calculate prompt size in KB
+        local prompt_size_kb
+        prompt_size_kb=$(awk "BEGIN {printf \"%.1f\", ${#prompt} / 1024}")
 
-    local start_time response elapsed
-    start_time=$(date +%s)
-    response=$(call_llm "$prompt")
-    elapsed=$(($(date +%s) - start_time))
+        echo -e "${CYAN}Asking ${BACKEND_DISPLAY} (${prompt_size_kb} KB)...${NC}"
 
-    # Parse messages
-    readarray -t suggestions < <(parse_messages "$response")
+        local start_time response elapsed
+        start_time=$(date +%s)
+        response=$(call_llm "$prompt")
+        elapsed=$(($(date +%s) - start_time))
 
-    if [[ ${#suggestions[@]} -eq 0 ]]; then
-        echo -e "${YELLOW}Could not parse commit messages from response:${NC}"
-        echo "$response"
-        exit 1
-    fi
+        # Parse messages
+        readarray -t suggestions < <(parse_messages "$response")
 
-    display_suggestions suggestions "$elapsed"
+        if [[ ${#suggestions[@]} -eq 0 ]]; then
+            echo -e "${YELLOW}Could not parse commit messages from response:${NC}"
+            echo "$response"
+            exit 1
+        fi
 
-    # If reviewing an existing commit, just exit (no prompting)
-    if [[ -n "$TARGET_COMMIT" ]]; then
-        exit 0
-    fi
+        display_suggestions suggestions "$elapsed"
 
-    # Prompt user
-    echo -e "${BOLD}[N]${NC} select  ${BOLD}[e/e N]${NC} edit  ${BOLD}[Enter/q]${NC} quit  ${BOLD}[text]${NC} enter your own message"
-    echo -n "> "
+        # If reviewing an existing commit, just exit (no prompting)
+        if [[ -n "$TARGET_COMMIT" ]]; then
+            exit 0
+        fi
 
-    local input
-    read -r input
+        # Prompt user
+        echo -e "${BOLD}[N]${NC} select  ${BOLD}[e/e N]${NC} edit  ${BOLD}[r]${NC} retry  ${BOLD}[Enter/q]${NC} quit  ${BOLD}[text]${NC} enter your own message"
+        echo -n "> "
 
-    # Handle empty input or quit
-    if [[ -z "$input" || "$input" == "q" || "$input" == "Q" ]]; then
-        exit 0
-    fi
+        read -r input
+
+        # Handle retry
+        if [[ "$input" == "r" || "$input" == "R" ]]; then
+            NUM_SUGGESTIONS=$((NUM_SUGGESTIONS + 2))
+            continue
+        fi
+
+        # Handle empty input or quit
+        if [[ -z "$input" || "$input" == "q" || "$input" == "Q" ]]; then
+            exit 0
+        fi
+
+        break
+    done
 
     # Handle edit command
     if [[ "$input" =~ ^e[[:space:]]*([0-9]*)$ ]]; then
