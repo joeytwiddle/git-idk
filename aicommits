@@ -1,0 +1,434 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Configuration
+NUM_SUGGESTIONS="${AICOMMITS_NUM_SUGGESTIONS:-3}"
+MODEL="${AICOMMITS_MODEL:-claude-sonnet-4-20250514}"
+API_URL="https://api.anthropic.com/v1/messages"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+# Check for required tools
+check_requirements() {
+    if ! command -v curl &> /dev/null; then
+        echo -e "${RED}Error: curl is required but not installed.${NC}" >&2
+        exit 1
+    fi
+    if ! command -v jq &> /dev/null; then
+        echo -e "${RED}Error: jq is required but not installed.${NC}" >&2
+        exit 1
+    fi
+    if ! command -v git &> /dev/null; then
+        echo -e "${RED}Error: git is required but not installed.${NC}" >&2
+        exit 1
+    fi
+    if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+        echo -e "${RED}Error: ANTHROPIC_API_KEY environment variable is not set.${NC}" >&2
+        exit 1
+    fi
+}
+
+# Check if we're in a git repository
+check_git_repo() {
+    if ! git rev-parse --is-inside-work-tree &> /dev/null; then
+        echo -e "${RED}Error: Not in a git repository.${NC}" >&2
+        exit 1
+    fi
+}
+
+# Check if there are staged changes
+check_staged_changes() {
+    if git diff --cached --quiet; then
+        echo -e "${RED}Error: No staged changes to commit.${NC}" >&2
+        exit 1
+    fi
+}
+
+# Gather git data
+gather_git_data() {
+    local staged_diff last_3_commits last_15_titles
+
+    # Get staged changes
+    staged_diff=$(git diff --cached --stat && echo "---" && git diff --cached)
+
+    # Get full data for last 3 commits (if they exist)
+    local commit_count
+    commit_count=$(git rev-list --count HEAD 2>/dev/null || echo "0")
+
+    if [[ "$commit_count" -gt 0 ]]; then
+        local num_to_show=$((commit_count < 3 ? commit_count : 3))
+        last_3_commits=$(git log -n "$num_to_show" --pretty=format:"=== Commit: %h ===%nAuthor: %an%nDate: %ad%nMessage: %s%n%b" --patch)
+    else
+        last_3_commits="No previous commits"
+    fi
+
+    # Get titles of last 15 commits (if they exist)
+    if [[ "$commit_count" -gt 0 ]]; then
+        local titles_to_show=$((commit_count < 15 ? commit_count : 15))
+        last_15_titles=$(git log -n "$titles_to_show" --pretty=format:"%h %s")
+    else
+        last_15_titles="No previous commits"
+    fi
+
+    echo "STAGED_DIFF:$staged_diff"
+    echo "LAST_3_COMMITS:$last_3_commits"
+    echo "LAST_15_TITLES:$last_15_titles"
+}
+
+# Escape string for JSON
+json_escape() {
+    printf '%s' "$1" | jq -Rs '.'
+}
+
+# Build the system prompt
+build_system_prompt() {
+    cat << 'EOF'
+You are a helpful assistant that generates git commit messages. Based on the staged changes and commit history provided, suggest commit messages that:
+
+1. Follow conventional commit format when appropriate (feat:, fix:, docs:, refactor:, test:, chore:, etc.)
+2. Are concise but descriptive (ideally under 72 characters for the first line)
+3. Match the style and conventions used in the repository's existing commits
+4. Describe WHAT changed and WHY, not HOW
+
+When asked to refine, consider the user's feedback and generate improved suggestions.
+
+IMPORTANT: Output ONLY the commit messages, one per line, numbered. Do not include any other text, explanations, or formatting. Example output format:
+1. feat: add user authentication flow
+2. feat(auth): implement login and signup functionality
+3. Add authentication system with JWT tokens
+EOF
+}
+
+# Build the user message
+build_user_message() {
+    local staged_diff="$1"
+    local last_3_commits="$2"
+    local last_15_titles="$3"
+    local num_suggestions="$4"
+    local refinement="${5:-}"
+
+    local message="Please suggest $num_suggestions commit messages for the following staged changes.
+
+## Staged Changes
+\`\`\`
+$staged_diff
+\`\`\`
+
+## Last 15 Commit Titles (for style reference)
+\`\`\`
+$last_15_titles
+\`\`\`
+
+## Last 3 Full Commits (for context)
+\`\`\`
+$last_3_commits
+\`\`\`"
+
+    if [[ -n "$refinement" ]]; then
+        message="$message
+
+## User Feedback
+The user provided this feedback on the previous suggestions: $refinement
+
+Please generate $num_suggestions improved commit message suggestions based on this feedback."
+    fi
+
+    echo "$message"
+}
+
+# Call Claude API
+call_claude() {
+    local messages_json="$1"
+    local system_prompt
+    system_prompt=$(build_system_prompt)
+
+    local request_body
+    request_body=$(jq -n \
+        --arg model "$MODEL" \
+        --arg system "$system_prompt" \
+        --argjson messages "$messages_json" \
+        '{
+            model: $model,
+            max_tokens: 1024,
+            system: $system,
+            messages: $messages
+        }')
+
+    local response
+    response=$(curl -s -X POST "$API_URL" \
+        -H "Content-Type: application/json" \
+        -H "x-api-key: $ANTHROPIC_API_KEY" \
+        -H "anthropic-version: 2023-06-01" \
+        -d "$request_body")
+
+    # Check for errors
+    local error_type
+    error_type=$(echo "$response" | jq -r '.error.type // empty')
+    if [[ -n "$error_type" ]]; then
+        local error_message
+        error_message=$(echo "$response" | jq -r '.error.message // "Unknown error"')
+        echo -e "${RED}API Error ($error_type): $error_message${NC}" >&2
+        exit 1
+    fi
+
+    # Extract the text content
+    echo "$response" | jq -r '.content[0].text'
+}
+
+# Parse commit messages from Claude's response
+parse_messages() {
+    local response="$1"
+    local messages=()
+
+    # Extract numbered lines (1. message, 2. message, etc.)
+    while IFS= read -r line; do
+        # Remove leading number and punctuation (1. or 1: or 1) etc.)
+        local cleaned
+        cleaned=$(echo "$line" | sed -E 's/^[0-9]+[\.\:\)]\s*//')
+        if [[ -n "$cleaned" ]]; then
+            messages+=("$cleaned")
+        fi
+    done <<< "$(echo "$response" | grep -E '^[0-9]+[\.\:\)]')"
+
+    printf '%s\n' "${messages[@]}"
+}
+
+# Display commit message suggestions
+display_suggestions() {
+    local -n msgs=$1
+    echo -e "\n${BOLD}${CYAN}Suggested commit messages:${NC}\n"
+    for i in "${!msgs[@]}"; do
+        local num=$((i + 1))
+        echo -e "  ${BOLD}${GREEN}$num.${NC} ${msgs[$i]}"
+    done
+    echo ""
+}
+
+# Get editor command
+get_editor() {
+    if [[ -n "${EDITOR:-}" ]]; then
+        echo "$EDITOR"
+    elif [[ -n "${VISUAL:-}" ]]; then
+        echo "$VISUAL"
+    elif command -v editor &> /dev/null; then
+        echo "editor"
+    elif command -v nano &> /dev/null; then
+        echo "nano"
+    elif command -v vim &> /dev/null; then
+        echo "vim"
+    elif command -v vi &> /dev/null; then
+        echo "vi"
+    else
+        echo "nano"
+    fi
+}
+
+# Edit a message
+edit_message() {
+    local message="$1"
+    local tmpfile
+    tmpfile=$(mktemp)
+
+    echo "$message" > "$tmpfile"
+
+    local editor_cmd
+    editor_cmd=$(get_editor)
+
+    $editor_cmd "$tmpfile"
+
+    local edited_message
+    edited_message=$(cat "$tmpfile")
+    rm -f "$tmpfile"
+
+    # Return empty if message was cleared
+    if [[ -z "$(echo "$edited_message" | tr -d '[:space:]')" ]]; then
+        echo ""
+    else
+        echo "$edited_message"
+    fi
+}
+
+# Commit with message
+do_commit() {
+    local message="$1"
+    if git commit -m "$message"; then
+        echo -e "\n${GREEN}${BOLD}Successfully committed with message:${NC}"
+        echo -e "  ${message}"
+        return 0
+    else
+        echo -e "\n${RED}Commit failed.${NC}" >&2
+        return 1
+    fi
+}
+
+# Main function
+main() {
+    check_requirements
+    check_git_repo
+    check_staged_changes
+
+    echo -e "${CYAN}Gathering git data...${NC}"
+
+    # Gather git data
+    local staged_diff last_3_commits last_15_titles
+    staged_diff=$(git diff --cached --stat && echo "---" && git diff --cached)
+
+    local commit_count
+    commit_count=$(git rev-list --count HEAD 2>/dev/null || echo "0")
+
+    if [[ "$commit_count" -gt 0 ]]; then
+        local num_to_show=$((commit_count < 3 ? commit_count : 3))
+        last_3_commits=$(git log -n "$num_to_show" --pretty=format:"=== Commit: %h ===%nAuthor: %an%nDate: %ad%nMessage: %s%n%b" --patch)
+    else
+        last_3_commits="No previous commits"
+    fi
+
+    if [[ "$commit_count" -gt 0 ]]; then
+        local titles_to_show=$((commit_count < 15 ? commit_count : 15))
+        last_15_titles=$(git log -n "$titles_to_show" --pretty=format:"%h %s")
+    else
+        last_15_titles="No previous commits"
+    fi
+
+    # Build conversation history for multi-turn refinement
+    local conversation_history="[]"
+    local current_suggestions=()
+
+    while true; do
+        echo -e "${CYAN}Asking Claude for commit message suggestions...${NC}"
+
+        # Build user message
+        local user_message
+        if [[ "$conversation_history" == "[]" ]]; then
+            user_message=$(build_user_message "$staged_diff" "$last_3_commits" "$last_15_titles" "$NUM_SUGGESTIONS")
+        else
+            # Get the last refinement from history
+            local last_user_msg
+            last_user_msg=$(echo "$conversation_history" | jq -r '.[-1].content')
+            user_message="$last_user_msg"
+        fi
+
+        # Add user message to history
+        conversation_history=$(echo "$conversation_history" | jq --arg content "$user_message" '. + [{"role": "user", "content": $content}]')
+
+        # Call Claude
+        local response
+        response=$(call_claude "$conversation_history")
+
+        # Add assistant response to history
+        conversation_history=$(echo "$conversation_history" | jq --arg content "$response" '. + [{"role": "assistant", "content": $content}]')
+
+        # Parse messages
+        readarray -t current_suggestions < <(parse_messages "$response")
+
+        if [[ ${#current_suggestions[@]} -eq 0 ]]; then
+            echo -e "${YELLOW}Could not parse commit messages from response:${NC}"
+            echo "$response"
+            echo ""
+            echo -e "${YELLOW}Please try again with feedback.${NC}"
+        else
+            display_suggestions current_suggestions
+        fi
+
+        # Prompt user
+        echo -e "${BOLD}Options:${NC}"
+        echo -e "  ${GREEN}<Enter>${NC}     - Use first message"
+        echo -e "  ${GREEN}<number>${NC}   - Use that message (e.g., 2)"
+        echo -e "  ${GREEN}e${NC}          - Edit first message"
+        echo -e "  ${GREEN}e <number>${NC} - Edit that message (e.g., e 3)"
+        echo -e "  ${GREEN}q${NC}          - Quit"
+        echo -e "  ${GREEN}<text>${NC}     - Provide feedback for refinement"
+        echo ""
+        echo -n "> "
+
+        local input
+        read -r input
+
+        # Handle empty input (select first)
+        if [[ -z "$input" ]]; then
+            if [[ ${#current_suggestions[@]} -gt 0 ]]; then
+                do_commit "${current_suggestions[0]}"
+                exit 0
+            else
+                echo -e "${RED}No suggestions available.${NC}"
+                continue
+            fi
+        fi
+
+        # Handle quit
+        if [[ "$input" == "q" || "$input" == "Q" ]]; then
+            echo -e "${YELLOW}Aborted.${NC}"
+            exit 0
+        fi
+
+        # Handle edit command
+        if [[ "$input" =~ ^e[[:space:]]*([0-9]*)$ ]]; then
+            local edit_num="${BASH_REMATCH[1]:-1}"
+            local edit_idx=$((edit_num - 1))
+
+            if [[ $edit_idx -lt 0 || $edit_idx -ge ${#current_suggestions[@]} ]]; then
+                echo -e "${RED}Invalid selection: $edit_num${NC}"
+                continue
+            fi
+
+            local edited
+            edited=$(edit_message "${current_suggestions[$edit_idx]}")
+
+            if [[ -z "$edited" ]]; then
+                echo -e "${YELLOW}Empty message, commit aborted.${NC}"
+                continue
+            fi
+
+            do_commit "$edited"
+            exit 0
+        fi
+
+        # Handle number selection
+        if [[ "$input" =~ ^[0-9]+$ ]]; then
+            local select_idx=$((input - 1))
+
+            if [[ $select_idx -lt 0 || $select_idx -ge ${#current_suggestions[@]} ]]; then
+                echo -e "${RED}Invalid selection: $input${NC}"
+                continue
+            fi
+
+            do_commit "${current_suggestions[$select_idx]}"
+            exit 0
+        fi
+
+        # Otherwise, treat as feedback for refinement
+        echo -e "${CYAN}Refining suggestions based on your feedback...${NC}"
+
+        local refinement_message="Based on my feedback: $input
+
+Please suggest $NUM_SUGGESTIONS improved commit messages."
+
+        # Add refinement to conversation
+        conversation_history=$(echo "$conversation_history" | jq --arg content "$refinement_message" '. + [{"role": "user", "content": $content}]')
+
+        # Call Claude again
+        response=$(call_claude "$conversation_history")
+
+        # Add response to history
+        conversation_history=$(echo "$conversation_history" | jq --arg content "$response" '. + [{"role": "assistant", "content": $content}]')
+
+        # Parse new suggestions
+        readarray -t current_suggestions < <(parse_messages "$response")
+
+        if [[ ${#current_suggestions[@]} -eq 0 ]]; then
+            echo -e "${YELLOW}Could not parse commit messages from response:${NC}"
+            echo "$response"
+        else
+            display_suggestions current_suggestions
+        fi
+    done
+}
+
+main "$@"
