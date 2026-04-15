@@ -364,7 +364,7 @@ build_user_message() {
 - Follow the style of the recent commit messages.
 - You should ONLY use conventional commits format (\"feat/fix/chore: ...\") if the recent commits already use conventional commits format, otherwise you should NOT use conventional commits format.
 
-## Staged Changes
+## Staged Changes (this is what you need to generate a commit message for)
 \`\`\`
 $staged_diff
 \`\`\`"
@@ -373,7 +373,7 @@ $staged_diff
     if [[ -n "$title_commits" ]]; then
         message="$message
 
-## Recent Commit Titles (for style reference)
+## Context: Recent Commit Titles (for style reference)
 \`\`\`
 $title_commits
 \`\`\`"
@@ -383,7 +383,7 @@ $title_commits
     if [[ -n "$context_commits" ]]; then
         message="$message
 
-## Recent Commits with Diffs (for context)
+## Context: Recent Commits with Diffs (for some idea of other things that happened recently)
 \`\`\`
 $context_commits
 \`\`\`"
@@ -393,7 +393,7 @@ $context_commits
     if [[ -n "$feedback" ]]; then
         message="$message
 
-## Feedback
+## Context: User feedback
 $feedback"
     fi
 
@@ -778,7 +778,7 @@ main() {
         fi
 
         # Prompt user
-        echo -e "${BOLD}[N]${NC} select  ${BOLD}[e/e N]${NC} edit  ${BOLD}[r]${NC} retry  ${BOLD}[Enter/q]${NC} quit  ${BOLD}[text]${NC} enter your own message"
+        echo -e "${BOLD}[N]${NC} select  ${BOLD}[e/e N]${NC} edit  ${BOLD}[d]${NC} diff  ${BOLD}[r]${NC} retry  ${BOLD}[Enter/q]${NC} quit  ${BOLD}[text]${NC} enter your own message"
         echo -n "> "
 
         read -r input
@@ -800,6 +800,18 @@ main() {
                 NUM_SUGGESTIONS=$((NUM_SUGGESTIONS + 2))
                 feedback="$retry_args"
             fi
+            continue
+        fi
+
+        # Handle diff
+        if [[ "$input" == "d" || "$input" == "D" ]]; then
+            echo ""
+            if [[ "$STAGE_ALL" == true ]]; then
+                git diff HEAD
+            else
+                git diff --cached
+            fi
+            echo ""
             continue
         fi
 
