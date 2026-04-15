@@ -676,7 +676,7 @@ $initial_prompt"
         fi
 
         # Prompt user
-        echo -e "${BOLD}[Enter]${NC} first  ${BOLD}[N]${NC} select  ${BOLD}[e/e N]${NC} edit  ${BOLD}[q]${NC} quit  ${BOLD}[text]${NC} refine"
+        echo -e "${BOLD}[Enter]${NC} first  ${BOLD}[N]${NC} select  ${BOLD}[e/e N]${NC} edit  ${BOLD}[q]${NC} quit  ${BOLD}[text]${NC} write your own"
         echo -n "> "
 
         local input
@@ -734,18 +734,9 @@ $initial_prompt"
             exit 0
         fi
 
-        # Otherwise, treat as feedback for refinement
-        # Build conversation context with previous suggestions and feedback
-        conversation_context="Previous suggestions:
-$(printf '%s\n' "${current_suggestions[@]}" | nl -w1 -s'. ')
-
-User feedback: $input
-
-"
-        # Update initial_prompt for next iteration
-        initial_prompt="Based on the feedback above, please suggest $NUM_SUGGESTIONS improved commit messages."
-
-        # The next iteration of the loop will call the LLM again
+        # Otherwise, use the input directly as commit message
+        do_commit "$input"
+        exit 0
     done
 }
 
