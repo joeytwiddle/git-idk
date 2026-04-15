@@ -762,21 +762,14 @@ main() {
     fi
 
     # Prompt user
-    echo -e "${BOLD}[Enter]${NC} first  ${BOLD}[N]${NC} select  ${BOLD}[e/e N]${NC} edit  ${BOLD}[q]${NC} quit  ${BOLD}[text]${NC} use as message"
+    echo -e "${BOLD}[N]${NC} select  ${BOLD}[e/e N]${NC} edit  ${BOLD}[Enter/q]${NC} quit  ${BOLD}[text]${NC} enter your own message"
     echo -n "> "
 
     local input
     read -r input
 
-    # Handle empty input (select first)
-    if [[ -z "$input" ]]; then
-        do_commit "${suggestions[0]}"
-        exit 0
-    fi
-
-    # Handle quit
-    if [[ "$input" == "q" || "$input" == "Q" ]]; then
-        echo -e "${YELLOW}Aborted.${NC}"
+    # Handle empty input or quit
+    if [[ -z "$input" || "$input" == "q" || "$input" == "Q" ]]; then
         exit 0
     fi
 
