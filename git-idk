@@ -805,7 +805,7 @@ main() {
 
         # Handle empty input or quit
         if [[ -z "$input" || "$input" == "q" || "$input" == "Q" ]]; then
-            exit 0
+            exit 1
         fi
 
         break
