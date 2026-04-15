@@ -357,6 +357,7 @@ build_user_message() {
     local title_commits="$2"
     local context_commits="$3"
     local num_suggestions="$4"
+    local feedback="${5:-}"
 
     local message="Please suggest $num_suggestions commit messages for the following staged changes.
 
@@ -386,6 +387,14 @@ $title_commits
 \`\`\`
 $context_commits
 \`\`\`"
+    fi
+
+    # Include feedback if provided
+    if [[ -n "$feedback" ]]; then
+        message="$message
+
+## Feedback
+$feedback"
     fi
 
     echo "$message"
@@ -735,11 +744,11 @@ main() {
         context_commits=""
     fi
 
-    local prompt suggestions input
+    local prompt suggestions input feedback=""
 
     while true; do
         # Build prompt and call LLM
-        prompt=$(build_user_message "$changes_diff" "$title_commits" "$context_commits" "$NUM_SUGGESTIONS")
+        prompt=$(build_user_message "$changes_diff" "$title_commits" "$context_commits" "$NUM_SUGGESTIONS" "$feedback")
 
         # Calculate prompt size in KB
         local prompt_size_kb
@@ -774,9 +783,23 @@ main() {
 
         read -r input
 
-        # Handle retry
-        if [[ "$input" == "r" || "$input" == "R" ]]; then
-            NUM_SUGGESTIONS=$((NUM_SUGGESTIONS + 2))
+        # Handle retry: r, r 5, r feedback, r 5 feedback
+        if [[ "$input" =~ ^[rR](\ +(.*))?$ ]]; then
+            local retry_args="${BASH_REMATCH[2]:-}"
+            if [[ -z "$retry_args" ]]; then
+                # Just "r" - increase by 2
+                echo -e "${YELLOW}Hint: r [count] [feedback] - both optional${NC}"
+                NUM_SUGGESTIONS=$((NUM_SUGGESTIONS + 2))
+                feedback=""
+            elif [[ "$retry_args" =~ ^([0-9]+)(\ +(.*))?$ ]]; then
+                # "r 5" or "r 5 feedback"
+                NUM_SUGGESTIONS="${BASH_REMATCH[1]}"
+                feedback="${BASH_REMATCH[3]:-}"
+            else
+                # "r feedback"
+                NUM_SUGGESTIONS=$((NUM_SUGGESTIONS + 2))
+                feedback="$retry_args"
+            fi
             continue
         fi
 
