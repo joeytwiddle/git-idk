@@ -4,9 +4,10 @@ set -euo pipefail
 # Configuration
 NUM_SUGGESTIONS="${AICOMMITS_NUM_SUGGESTIONS:-3}"
 
-# Model defaults per backend
-CLAUDE_MODEL="${AICOMMITS_CLAUDE_MODEL:-claude-sonnet-4-20250514}"
-OPENAI_MODEL="${AICOMMITS_OPENAI_MODEL:-gpt-4o}"
+# Model defaults per backend (fast models for quick responses)
+CLAUDE_CLI_MODEL="${AICOMMITS_CLAUDE_MODEL:-haiku}"
+CLAUDE_API_MODEL="${AICOMMITS_CLAUDE_MODEL:-claude-haiku-4-5-20251001}"
+OPENAI_MODEL="${AICOMMITS_OPENAI_MODEL:-gpt-4o-mini}"
 GEMINI_MODEL="${AICOMMITS_GEMINI_MODEL:-gemini-2.0-flash}"
 OLLAMA_MODEL="${AICOMMITS_OLLAMA_MODEL:-llama3.2}"
 
@@ -51,8 +52,8 @@ Other options:
 Environment variables:
   AICOMMITS_BACKEND          Backend to use (claude_cli, claude_api, openai, gemini, ollama)
   AICOMMITS_NUM_SUGGESTIONS  Number of suggestions (default: 3)
-  AICOMMITS_CLAUDE_MODEL     Claude model (default: claude-sonnet-4-20250514)
-  AICOMMITS_OPENAI_MODEL     OpenAI model (default: gpt-4o)
+  AICOMMITS_CLAUDE_MODEL     Claude model (default: haiku for CLI, claude-haiku-4-5-20251001 for API)
+  AICOMMITS_OPENAI_MODEL     OpenAI model (default: gpt-4o-mini)
   AICOMMITS_GEMINI_MODEL     Gemini model (default: gemini-2.0-flash)
   AICOMMITS_OLLAMA_MODEL     Ollama model (default: llama3.2)
   AICOMMITS_OPENAI_URL       OpenAI-compatible endpoint URL
@@ -146,7 +147,7 @@ check_requirements() {
                 echo -e "${RED}Error: 'claude' CLI not found.${NC}" >&2
                 exit 1
             fi
-            BACKEND_DISPLAY="Claude CLI"
+            BACKEND_DISPLAY="Claude CLI ($CLAUDE_CLI_MODEL)"
             ;;
         claude_api)
             check_curl_jq
@@ -154,7 +155,7 @@ check_requirements() {
                 echo -e "${RED}Error: ANTHROPIC_API_KEY environment variable is not set.${NC}" >&2
                 exit 1
             fi
-            BACKEND_DISPLAY="Claude API ($CLAUDE_MODEL)"
+            BACKEND_DISPLAY="Claude API ($CLAUDE_API_MODEL)"
             ;;
         openai)
             check_curl_jq
@@ -201,7 +202,8 @@ check_requirements() {
     # Apply model override if specified
     if [[ -n "${MODEL_OVERRIDE:-}" ]]; then
         case "$BACKEND" in
-            claude_cli|claude_api) CLAUDE_MODEL="$MODEL_OVERRIDE" ;;
+            claude_cli) CLAUDE_CLI_MODEL="$MODEL_OVERRIDE" ;;
+            claude_api) CLAUDE_API_MODEL="$MODEL_OVERRIDE" ;;
             openai) OPENAI_MODEL="$MODEL_OVERRIDE" ;;
             gemini) GEMINI_MODEL="$MODEL_OVERRIDE" ;;
             ollama) OLLAMA_MODEL="$MODEL_OVERRIDE" ;;
@@ -341,7 +343,7 @@ $prompt"
     # Use claude CLI in print mode (-p) for non-interactive use
     # Redirect stdin from /dev/null to prevent reading from terminal
     local response
-    if ! response=$(claude -p --model "$CLAUDE_MODEL" "$full_prompt" < /dev/null 2>&1); then
+    if ! response=$(claude -p --model "$CLAUDE_CLI_MODEL" "$full_prompt" < /dev/null 2>&1); then
         echo -e "${RED}Claude CLI error: $response${NC}" >&2
         exit 1
     fi
@@ -357,7 +359,7 @@ call_claude_api() {
 
     local request_body
     request_body=$(jq -n \
-        --arg model "$CLAUDE_MODEL" \
+        --arg model "$CLAUDE_API_MODEL" \
         --arg system "$system_prompt" \
         --arg content "$prompt" \
         '{
@@ -649,16 +651,7 @@ main() {
     local initial_prompt
     initial_prompt=$(build_user_message "$staged_diff" "$last_3_commits" "$last_15_titles" "$NUM_SUGGESTIONS")
 
-    local first_request=true
-
     while true; do
-        if [[ "$first_request" == true ]]; then
-            echo -e "${CYAN}Asking ${BACKEND_DISPLAY}...${NC}"
-            first_request=false
-        else
-            echo -e "${CYAN}Refining...${NC}"
-        fi
-
         local response
         local full_prompt
 
@@ -669,6 +662,13 @@ main() {
 
 $initial_prompt"
         fi
+
+        # Calculate prompt size in KB
+        local prompt_size_bytes=${#full_prompt}
+        local prompt_size_kb
+        prompt_size_kb=$(awk "BEGIN {printf \"%.1f\", $prompt_size_bytes / 1024}")
+
+        echo -e "${CYAN}Asking ${BACKEND_DISPLAY} (${prompt_size_kb} KB)...${NC}"
 
         response=$(call_llm "$full_prompt")
 
