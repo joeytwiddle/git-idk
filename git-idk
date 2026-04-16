@@ -12,6 +12,9 @@
 
 set -euo pipefail
 
+# Need bash >= 4.3, due to use of `local -n ` and `readarray`
+[[ "${BASH_VERSINFO[0]}" -lt 4 ]] && { echo "Requires bash 4+"; exit 1; }
+
 # Source config file if it exists (before setting defaults)
 [[ -f ~/.config/git-idk.conf ]] && source ~/.config/git-idk.conf
 
@@ -80,7 +83,7 @@ Environment variables:
   GIT_IDK_CONTEXT_COMMITS  Number of recent commits with full diffs (default: 0)
   GIT_IDK_CLAUDE_MODEL     Claude model (default: haiku for CLI, claude-haiku-4-5-20251001 for API)
   GIT_IDK_OPENAI_MODEL     OpenAI model (default: gpt-4o-mini)
-  GIT_IDK_GEMINI_MODEL     Gemini model (default: gemini-2.0-flash)
+  GIT_IDK_GEMINI_MODEL     Gemini model (default: gemini-2.5-flash-lite)
   GIT_IDK_OLLAMA_MODEL     Ollama model (default: llama3.2)
   GIT_IDK_OPENAI_URL       OpenAI-compatible endpoint URL
   GIT_IDK_OLLAMA_URL       Ollama server URL (default: http://localhost:11434/api/chat)
@@ -342,11 +345,6 @@ check_staged_changes() {
             STAGE_ALL=true
         fi
     fi
-}
-
-# Escape string for JSON
-json_escape() {
-    printf '%s' "$1" | jq -Rs '.'
 }
 
 # Build the system prompt
@@ -844,8 +842,12 @@ main() {
         fi
 
         # Handle empty input or quit
-        if [[ -z "$input" || "$input" == "q" || "$input" == "Q" ]]; then
+        if [[ -z "$input" ]]; then
+            echo "${YELLOW}No command given, quitting.${NC}"
             exit 1
+        fi
+        if [[ "$input" == "q" || "$input" == "Q" ]]; then
+            exit 0
         fi
 
         break
