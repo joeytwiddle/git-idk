@@ -715,10 +715,10 @@ main() {
 
     # Gather git data
     local changes_diff title_commits context_commits
+    local resolved_ref=""
 
     if [[ -n "$TARGET_COMMIT" ]]; then
         # Reviewing an existing commit
-        local resolved_ref
         resolved_ref=$(resolve_commit_ref "$TARGET_COMMIT")
 
         # Validate commit exists
@@ -744,10 +744,15 @@ main() {
     local commit_count
     commit_count=$(git rev-list --count HEAD 2>/dev/null || echo "0")
 
+    local last_commit_to_list=HEAD
+    if [ -n "$resolved_ref" ]; then
+        last_commit_to_list="${resolved_ref}~"
+    fi
+
     # Get commit titles for style reference if requested
     if [[ "$NUM_TITLE_COMMITS" -gt 0 && "$commit_count" -gt 0 ]]; then
         local titles_to_show=$((commit_count < NUM_TITLE_COMMITS ? commit_count : NUM_TITLE_COMMITS))
-        title_commits=$(git log -n "$titles_to_show" --pretty=format:"%h %s")
+        title_commits=$(git log -n "$titles_to_show" --pretty=format:"%h %s" "$last_commit_to_list")
     else
         title_commits=""
     fi
@@ -755,7 +760,7 @@ main() {
     # Get full commits with diffs if requested
     if [[ "$NUM_CONTEXT_COMMITS" -gt 0 && "$commit_count" -gt 0 ]]; then
         local num_to_show=$((commit_count < NUM_CONTEXT_COMMITS ? commit_count : NUM_CONTEXT_COMMITS))
-        context_commits=$(git log -n "$num_to_show" --pretty=format:"=== Commit: %h ===%nMessage: %s%n%b" --patch)
+        context_commits=$(git log -n "$num_to_show" --pretty=format:"=== Commit: %h ===%nMessage: %s%n%b" --patch "$last_commit_to_list")
     else
         context_commits=""
     fi
