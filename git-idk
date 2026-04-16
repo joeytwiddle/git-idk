@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+#
+# git-idk - AI-powered commit message generator
+#
+# Analyzes staged changes and recent commit history, then uses an LLM to
+# suggest commit messages that match your project's style. Supports multiple
+# backends: Claude CLI, Claude API, OpenAI, Gemini, and Ollama.
+#
+# Usage: git-idk [options]
+# Run 'git-idk --help' for full options.
+#
+
 set -euo pipefail
 
 # Source config file if it exists (before setting defaults)
