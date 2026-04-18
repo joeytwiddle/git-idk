@@ -4,7 +4,7 @@
 #
 # Analyzes staged changes and recent commit history, then uses an LLM to
 # suggest commit messages that match your project's style. Supports multiple
-# backends: Claude CLI, Claude API, OpenAI, Gemini, and Ollama.
+# backends: Claude CLI, Claude API, AI Gateway, OpenAI, Gemini, and Ollama.
 #
 # Usage: git-idk [options]
 # Run 'git-idk --help' for full options.
@@ -39,7 +39,12 @@ OPENAI_API_URL="${GIT_IDK_OPENAI_URL:-${OPENAI_API_URL:-https://api.openai.com/v
 GEMINI_API_URL="${GEMINI_API_URL:-https://generativelanguage.googleapis.com/v1beta/models}"
 OLLAMA_API_URL="${GIT_IDK_OLLAMA_URL:-${OLLAMA_API_URL:-http://localhost:11434/api/chat}}"
 
-# Backend selection: claude_cli, claude_api, openai, gemini, ollama
+# AI Gateway: token from AI_GATEWAY_AUTH_HELPER for x-api-key; POST URL is AI_GATEWAY_BASE_URL
+AI_GATEWAY_BASE_URL="${AI_GATEWAY_BASE_URL:-}"
+AI_GATEWAY_AUTH_HELPER="${AI_GATEWAY_AUTH_HELPER:-}"
+AI_GATEWAY_MODEL="${GIT_IDK_AI_GATEWAY_MODEL:-${AI_GATEWAY_MODEL:-}}"
+
+# Backend selection: claude_cli, claude_api, ai_gateway, openai, gemini, ollama
 # Auto-detected, but can be forced with GIT_IDK_BACKEND or CLI flags
 BACKEND="${GIT_IDK_BACKEND:-${BACKEND:-auto}}"
 
@@ -62,6 +67,7 @@ Generate AI-powered commit messages for staged changes.
 Backend options (mutually exclusive):
   --claude          Use Claude CLI (default if available)
   --claude-api      Use Claude API directly
+  --ai-gateway      Use AI Gateway (see AI_GATEWAY_* env vars)
   --openai          Use OpenAI/ChatGPT API
   --gemini          Use Google Gemini API
   --ollama          Use local Ollama server
@@ -78,7 +84,7 @@ Other options:
   -h, --help                Show this help message
 
 Environment variables:
-  GIT_IDK_BACKEND          Backend to use (claude_cli, claude_api, openai, gemini, ollama)
+  GIT_IDK_BACKEND          Backend to use (claude_cli, claude_api, ai_gateway, openai, gemini, ollama)
   GIT_IDK_NUM_SUGGESTIONS  Number of suggestions (default: 3)
   GIT_IDK_TITLE_COMMITS    Number of recent commit titles for style (default: 15)
   GIT_IDK_CONTEXT_COMMITS  Number of recent commits with full diffs (default: 0)
@@ -88,6 +94,9 @@ Environment variables:
   GIT_IDK_OLLAMA_MODEL     Ollama model (default: llama3.2)
   GIT_IDK_OPENAI_URL       OpenAI-compatible endpoint URL
   GIT_IDK_OLLAMA_URL       Ollama server URL (default: http://localhost:11434/api/chat)
+  AI_GATEWAY_BASE_URL      Gateway POST URL; /v1/messages is appended if the URL does not already include it
+  AI_GATEWAY_AUTH_HELPER   Executable that prints the gateway key or token (stdout, first line)
+  GIT_IDK_AI_GATEWAY_MODEL / AI_GATEWAY_MODEL  Model id sent in the gateway request body (optional)
   ANTHROPIC_API_KEY          API key for Claude API
   OPENAI_API_KEY             API key for OpenAI
   GEMINI_API_KEY             API key for Google Gemini
@@ -107,6 +116,10 @@ parse_args() {
                 ;;
             --claude-api)
                 BACKEND="claude_api"
+                shift
+                ;;
+            --ai-gateway)
+                BACKEND="ai_gateway"
                 shift
                 ;;
             --openai|--chatgpt)
@@ -179,6 +192,8 @@ detect_backend() {
         echo "claude_cli"
     elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
         echo "claude_api"
+    elif [[ -n "${AI_GATEWAY_BASE_URL:-}" && -n "${AI_GATEWAY_AUTH_HELPER:-}" && -x "${AI_GATEWAY_AUTH_HELPER:-}" ]]; then
+        echo "ai_gateway"
     elif [[ -n "${OPENAI_API_KEY:-}" ]]; then
         echo "openai"
     elif [[ -n "${GEMINI_API_KEY:-}" ]]; then
@@ -215,6 +230,21 @@ check_requirements() {
             fi
             BACKEND_DISPLAY="Claude API ($CLAUDE_API_MODEL)"
             ;;
+        ai_gateway)
+            check_curl_jq
+            if [[ -z "${AI_GATEWAY_BASE_URL:-}" ]]; then
+                echo -e "${RED}Error: AI_GATEWAY_BASE_URL is not set.${NC}" >&2
+                exit 1
+            fi
+            if [[ -z "${AI_GATEWAY_AUTH_HELPER:-}" ]]; then
+                echo -e "${RED}Error: AI_GATEWAY_AUTH_HELPER is not set.${NC}" >&2
+                exit 1
+            fi
+            if [[ ! -x "$AI_GATEWAY_AUTH_HELPER" ]]; then
+                echo -e "${RED}Error: AI_GATEWAY_AUTH_HELPER is not an executable file: $AI_GATEWAY_AUTH_HELPER${NC}" >&2
+                exit 1
+            fi
+            ;;
         openai)
             check_curl_jq
             if [[ -z "${OPENAI_API_KEY:-}" ]]; then
@@ -244,6 +274,7 @@ check_requirements() {
             echo -e "${YELLOW}Options:${NC}" >&2
             echo -e "  - Install 'claude' CLI" >&2
             echo -e "  - Set ANTHROPIC_API_KEY for Claude API" >&2
+            echo -e "  - Set AI_GATEWAY_BASE_URL + AI_GATEWAY_AUTH_HELPER for AI Gateway" >&2
             echo -e "  - Set OPENAI_API_KEY for OpenAI" >&2
             echo -e "  - Set GEMINI_API_KEY for Gemini" >&2
             echo -e "  - Start Ollama server (ollama serve)" >&2
@@ -251,7 +282,7 @@ check_requirements() {
             ;;
         *)
             echo -e "${RED}Error: Unknown backend '$BACKEND'.${NC}" >&2
-            echo -e "Valid backends: claude_cli, claude_api, openai, gemini, ollama" >&2
+            echo -e "Valid backends: claude_cli, claude_api, ai_gateway, openai, gemini, ollama" >&2
             exit 1
             ;;
     esac
@@ -261,10 +292,15 @@ check_requirements() {
         case "$BACKEND" in
             claude_cli) CLAUDE_CLI_MODEL="$MODEL_OVERRIDE" ;;
             claude_api) CLAUDE_API_MODEL="$MODEL_OVERRIDE" ;;
+            ai_gateway) AI_GATEWAY_MODEL="$MODEL_OVERRIDE" ;;
             openai) OPENAI_MODEL="$MODEL_OVERRIDE" ;;
             gemini) GEMINI_MODEL="$MODEL_OVERRIDE" ;;
             ollama) OLLAMA_MODEL="$MODEL_OVERRIDE" ;;
         esac
+    fi
+
+    if [[ "$BACKEND" == "ai_gateway" ]]; then
+        BACKEND_DISPLAY="AI Gateway (${AI_GATEWAY_MODEL:-$CLAUDE_API_MODEL})"
     fi
 
     # For Ollama, ensure model is available (pull if needed)
@@ -512,6 +548,74 @@ call_claude_api() {
     echo "$response" | jq -r '.content[0].text'
 }
 
+# AI Gateway (currently only supports Anthropic Messages API)
+call_ai_gateway() {
+    local prompt="$1"
+    local system_prompt
+    system_prompt=$(build_system_prompt)
+
+    local gateway_model="${AI_GATEWAY_MODEL:-$CLAUDE_API_MODEL}"
+
+    local token
+    if ! token=$("$AI_GATEWAY_AUTH_HELPER" | head -n1 | tr -d '\r'); then
+        echo -e "${RED}Error: AI_GATEWAY_AUTH_HELPER exited with a non-zero status.${NC}" >&2
+        exit 1
+    fi
+    # trim leading/trailing whitespace
+    token="${token#"${token%%[![:space:]]*}"}"
+    token="${token%"${token##*[![:space:]]}"}"
+
+    if [[ -z "$token" ]]; then
+        echo -e "${RED}Error: AI_GATEWAY_AUTH_HELPER produced an empty token.${NC}" >&2
+        exit 1
+    fi
+
+    local url="$AI_GATEWAY_BASE_URL"
+    if [[ "$url" != *"/v1/messages"* ]]; then
+        url="${url%/}/v1/messages"
+    fi
+
+    local request_body
+    request_body=$(jq -n \
+        --arg model "$gateway_model" \
+        --arg system "$system_prompt" \
+        --arg content "$prompt" \
+        '{
+            model: $model,
+            max_tokens: 1024,
+            system: $system,
+            messages: [{"role": "user", "content": $content}]
+        }')
+
+    local response
+    if ! response=$(curl -fsS --connect-timeout 10 --max-time 120 -X POST "$url" \
+        -H "Content-Type: application/json" \
+        -H "x-api-key: $token" \
+        -H "anthropic-version: 2023-06-01" \
+        -d "$request_body"); then
+        echo -e "${RED}Error: AI Gateway request failed (network or HTTP error).${NC}" >&2
+        exit 1
+    fi
+
+    local error_type
+    error_type=$(echo "$response" | jq -r '.error.type // empty')
+    if [[ -n "$error_type" ]]; then
+        local error_message
+        error_message=$(echo "$response" | jq -r '.error.message // "Unknown error"')
+        echo -e "${RED}AI Gateway Error ($error_type): $error_message${NC}" >&2
+        exit 1
+    fi
+
+    local text
+    text=$(echo "$response" | jq -r '.content[0].text // empty')
+    if [[ -z "$text" ]]; then
+        echo -e "${RED}Error: AI Gateway returned no message text (unexpected JSON).${NC}" >&2
+        echo "$response" | head -c 2000 >&2
+        exit 1
+    fi
+    echo "$text"
+}
+
 # Call OpenAI API (also works with compatible endpoints)
 call_openai() {
     local prompt="$1"
@@ -636,6 +740,9 @@ call_llm() {
             ;;
         claude_api)
             call_claude_api "$prompt"
+            ;;
+        ai_gateway)
+            call_ai_gateway "$prompt"
             ;;
         openai)
             call_openai "$prompt"
