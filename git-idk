@@ -835,7 +835,7 @@ main() {
         fi
 
         # Prompt user
-        echo -e "${BOLD}[N]${NC} select  ${BOLD}[e/e N]${NC} edit  ${BOLD}[d]${NC} diff  ${BOLD}[r]${NC} retry  ${BOLD}[Enter/q]${NC} quit  ${BOLD}[text]${NC} enter your own message"
+        echo -e "${BOLD}${BLUE}[NUM]${NC}select ${BOLD}${BLUE}[e/e [NUM]]${NC}edit ${BOLD}${BLUE}[d]${NC}iff ${BOLD}${BLUE}[r]${NC}etry ${BOLD}${BLUE}[Enter/q]${NC}uit ${BOLD}${BLUE}[text]${NC}enter your own message"
         echo -n "> "
 
         read -r input
@@ -874,7 +874,7 @@ main() {
 
         # Handle empty input or quit
         if [[ -z "$input" ]]; then
-            echo "${YELLOW}No command given, quitting.${NC}"
+            echo -e "${YELLOW}No command given, quitting.${NC}"
             exit 1
         fi
         if [[ "$input" == "q" || "$input" == "Q" ]]; then
