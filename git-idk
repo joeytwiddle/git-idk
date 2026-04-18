@@ -48,13 +48,13 @@ AI_GATEWAY_MODEL="${GIT_IDK_AI_GATEWAY_MODEL:-${AI_GATEWAY_MODEL:-}}"
 # Auto-detected, but can be forced with GIT_IDK_BACKEND or CLI flags
 BACKEND="${GIT_IDK_BACKEND:-${BACKEND:-auto}}"
 
-# Colors
-RED='\033[0;31m'
+# Colors (red and blue are always bold, for legacy displays)
+BOLD='\033[1m'
+RED="\033[0;31m${BOLD}"
+BLUE="\033[0;34m${BOLD}"
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
 CYAN='\033[0;36m'
-BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 # Show usage
@@ -949,7 +949,7 @@ main() {
         fi
 
         # Prompt user
-        echo -e "${BOLD}${BLUE}[NUM]${NC}select ${BOLD}${BLUE}[e/e [NUM]]${NC}edit ${BOLD}${BLUE}[d]${NC}iff ${BOLD}${BLUE}[r]${NC}etry ${BOLD}${BLUE}[Enter/q]${NC}uit ${BOLD}${BLUE}[text]${NC}enter your own message"
+        echo -e "${BLUE}[NUM]${NC}select ${BLUE}[e]${NC}dit ${BLUE}[d]${NC}iff ${BLUE}[r]${NC}etry ${BLUE}[Enter/q]${NC}uit ${BLUE}[text]${NC}enter your own message"
         echo -n "> "
 
         read -r input
