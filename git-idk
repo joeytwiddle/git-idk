@@ -726,7 +726,7 @@ main() {
         fi
 
         # Get diff for the target commit
-        changes_diff=$(git show --stat "$resolved_ref" && echo "---" && git show --format="" "$resolved_ref")
+        changes_diff=$(git show --stat --pretty=format: "$resolved_ref" && echo "---" && git show --pretty=format: "$resolved_ref")
     else
         # Normal mode: check for staged changes
         check_staged_changes
