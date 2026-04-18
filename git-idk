@@ -389,11 +389,12 @@ build_system_prompt() {
     cat << 'EOF'
 You are a helpful assistant that generates git commit messages. Based on the staged changes and commit history provided, suggest commit messages that:
 
-1. Only use conventional commit format (feat:, fix:, docs:, refactor:, test:, chore:, etc.) when OTHER commit messages have also been using this form
-2. Are concise but descriptive (ideally under 72 characters for the first line)
-3. Match the style and conventions used in the repository's existing commits
+1. Read through each of the provided commit messages and understand the style and conventions used in the repository's existing commits
+2. DO NOT use conventional commit format (feat:, fix:, docs:, refactor:, test:, chore:, etc.) unless most OTHER commit messages have also been using this form
+3. Are concise but descriptive (ideally under 72 characters for the first line)
 4. Describe WHAT changed and WHY, not HOW
 5. Use imperative language
+6. Match the style and conventions used in the repository's existing commits
 
 When asked to refine, consider the user's feedback and generate improved suggestions.
 
