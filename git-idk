@@ -69,6 +69,7 @@ Backend options (mutually exclusive):
 Other options:
   -a, --all                 Stage all modified/deleted files before committing
   -C, --commit <ref>        Suggest messages for an existing commit (e.g., HEAD~2 or 3)
+  -<N>                     Same as -C <N> (e.g., -3 is three commits before HEAD)
   -n, --num <N>             Number of suggestions (default: 3)
   -t, --title-commits <N>   Number of recent commit titles for style reference (default: 15)
   -c, --context-commits <N> Number of recent commits with full diffs (default: 0)
@@ -122,6 +123,11 @@ parse_args() {
                 ;;
             -a|--all)
                 STAGE_ALL=true
+                shift
+                ;;
+            -[0-9]*)
+                # Shorthand: -3 == -C 3
+                TARGET_COMMIT="${1#-}"
                 shift
                 ;;
             -C|--commit)
