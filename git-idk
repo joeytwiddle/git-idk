@@ -67,31 +67,36 @@ Usage: git-idk [options]
 
 Generate AI-powered commit messages for staged changes.
 
-Backend options (mutually exclusive):
+Backend options:
   --claude          Use Claude CLI (default if available)
   --claude-api      Use Claude API directly
   --ai-gateway      Use AI Gateway (see AI_GATEWAY_* env vars)
   --openai          Use OpenAI/ChatGPT API
   --gemini          Use Google Gemini API
   --ollama          Use local Ollama server
+  --model <model>   Override the model for the selected backend
 
 Other options:
   -a, --all                 Stage all modified/deleted files before committing
-  -C, --commit <ref>        Suggest messages for an existing commit (e.g., HEAD~2 or 3)
-  -<N>                     Same as -C <N> (e.g., -3 is three commits before HEAD)
   -n, --num <N>             Number of suggestions (default: 3)
   -t, --title-commits <N>   Number of recent commit titles for style reference (default: 15)
   -c, --context-commits <N> Number of recent commits with full diffs (default: 0)
-  --model <model>           Override the model for the selected backend
   --debug                   Show the prompt sent to the LLM
+  -C, --commit <ref>        Suggest messages for an existing commit (e.g., HEAD~2 or 3)
+  -<N>                      Same as -C <N> (e.g., -3 is three commits before HEAD)
   -h, --help                Show this help message
 
-Environment variables:
+Environment variables / config:
   git-idk behavior (prefixed):
     GIT_IDK_BACKEND          Backend to use (claude_cli, claude_api, ai_gateway, openai, gemini, ollama)
     GIT_IDK_NUM_SUGGESTIONS  Number of suggestions (default: 3)
     GIT_IDK_TITLE_COMMITS    Number of recent commit titles for style (default: 15)
     GIT_IDK_CONTEXT_COMMITS  Number of recent commits with full diffs (default: 0)
+
+  Credentials (unprefixed, standard):
+    ANTHROPIC_API_KEY        API key for Claude API
+    OPENAI_API_KEY           API key for OpenAI
+    GEMINI_API_KEY           API key for Google Gemini
 
   Provider settings (unprefixed, vendor-namespaced):
     CLAUDE_CLI_MODEL         Claude CLI model (default: sonnet)
@@ -106,11 +111,6 @@ Environment variables:
     AI_GATEWAY_BASE_URL      Gateway POST URL; /v1/messages is appended if the URL does not already include it
     AI_GATEWAY_AUTH_HELPER   Executable that prints the gateway key or token (stdout, first line)
     AI_GATEWAY_MODEL         Model id sent in the gateway request body (optional)
-
-  Credentials (unprefixed, standard):
-    ANTHROPIC_API_KEY        API key for Claude API
-    OPENAI_API_KEY           API key for OpenAI
-    GEMINI_API_KEY           API key for Google Gemini
 
 Config file:
   ~/.config/git-idk.conf   Sourced at startup; use the same names as above
