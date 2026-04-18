@@ -326,6 +326,33 @@ resolve_commit_ref() {
     fi
 }
 
+print_tracked_changes_hint() {
+    echo -e "${YELLOW}Tracked changes that will be included:${NC}"
+    git diff HEAD --stat
+}
+
+# Print untracked, non-ignored paths touched within the last hour (not in git commit -a)
+print_recent_untracked_files_hint() {
+    local -a paths=()
+    local f
+
+    while IFS= read -r -d '' f; do
+        [[ -e "$f" ]] || continue
+        # -mmin -60: modified less than 60 minutes ago; -maxdepth 0 avoids descending into dirs
+        if [[ -n "$(find "$f" -maxdepth 0 -mmin -60 2>/dev/null)" ]]; then
+            paths+=("$f")
+        fi
+    done < <(git ls-files -z --others --exclude-standard)
+
+    if [[ ${#paths[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    echo -e "${YELLOW}Recent untracked files which will ${BOLD}NOT${NC}${YELLOW} be included:${NC}"
+    printf '%s\n' "${paths[@]}" | LC_ALL=C sort -u
+    echo ""
+}
+
 # Check if there are changes to commit
 check_staged_changes() {
     if [[ "$STAGE_ALL" == true ]]; then
@@ -343,6 +370,10 @@ check_staged_changes() {
             fi
             echo -e "${YELLOW}Nothing staged, using -a to commit all changes${NC}"
             STAGE_ALL=true
+            echo ""
+            print_tracked_changes_hint
+            echo ""
+            print_recent_untracked_files_hint
         fi
     fi
 }
@@ -725,7 +756,7 @@ main() {
             exit 1
         fi
 
-        # Get diff for the target commit
+        # Get diff for the target commit (but do not show the old commit message!)
         changes_diff=$(git show --stat --pretty=format: "$resolved_ref" && echo "---" && git show --pretty=format: "$resolved_ref")
     else
         # Normal mode: check for staged changes
