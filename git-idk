@@ -64,42 +64,42 @@ Usage: git-idk [options]
 
 Generate AI-powered commit messages for staged changes.
 
-Backend options (mutually exclusive):
+Backend options:
   --claude          Use Claude CLI (default if available)
   --claude-api      Use Claude API directly
   --ai-gateway      Use AI Gateway (see AI_GATEWAY_* env vars)
   --openai          Use OpenAI/ChatGPT API
   --gemini          Use Google Gemini API
   --ollama          Use local Ollama server
+  --model <model>   Override the model for the selected backend
 
 Other options:
   -a, --all                 Stage all modified/deleted files before committing
-  -C, --commit <ref>        Suggest messages for an existing commit (e.g., HEAD~2 or 3)
-  -<N>                     Same as -C <N> (e.g., -3 is three commits before HEAD)
   -n, --num <N>             Number of suggestions (default: 3)
   -t, --title-commits <N>   Number of recent commit titles for style reference (default: 15)
   -c, --context-commits <N> Number of recent commits with full diffs (default: 0)
-  --model <model>           Override the model for the selected backend
   --debug                   Show the prompt sent to the LLM
+  -C, --commit <ref>        Suggest messages for an existing commit (e.g., HEAD~2 or 3)
+  -<N>                      Same as -C <N> (e.g., -3 is three commits before HEAD)
   -h, --help                Show this help message
 
-Environment variables:
-  GIT_IDK_BACKEND          Backend to use (claude_cli, claude_api, ai_gateway, openai, gemini, ollama)
-  GIT_IDK_NUM_SUGGESTIONS  Number of suggestions (default: 3)
-  GIT_IDK_TITLE_COMMITS    Number of recent commit titles for style (default: 15)
-  GIT_IDK_CONTEXT_COMMITS  Number of recent commits with full diffs (default: 0)
-  GIT_IDK_CLAUDE_MODEL     Claude model (default: haiku for CLI, claude-haiku-4-5-20251001 for API)
-  GIT_IDK_OPENAI_MODEL     OpenAI model (default: gpt-4o-mini)
-  GIT_IDK_GEMINI_MODEL     Gemini model (default: gemini-2.5-flash-lite)
-  GIT_IDK_OLLAMA_MODEL     Ollama model (default: llama3.2)
-  GIT_IDK_OPENAI_URL       OpenAI-compatible endpoint URL
-  GIT_IDK_OLLAMA_URL       Ollama server URL (default: http://localhost:11434/api/chat)
-  AI_GATEWAY_BASE_URL      Gateway POST URL; /v1/messages is appended if the URL does not already include it
-  AI_GATEWAY_AUTH_HELPER   Executable that prints the gateway key or token (stdout, first line)
-  GIT_IDK_AI_GATEWAY_MODEL / AI_GATEWAY_MODEL  Model id sent in the gateway request body (optional)
-  ANTHROPIC_API_KEY          API key for Claude API
-  OPENAI_API_KEY             API key for OpenAI
-  GEMINI_API_KEY             API key for Google Gemini
+Environment variables / config:
+  GIT_IDK_BACKEND           Backend to use (claude_cli, claude_api, ai_gateway, openai, gemini, ollama)
+  GIT_IDK_NUM_SUGGESTIONS   Number of suggestions (default: 3)
+  GIT_IDK_TITLE_COMMITS     Number of recent commit titles for style (default: 15)
+  GIT_IDK_CONTEXT_COMMITS   Number of recent commits with full diffs (default: 0)
+  GIT_IDK_CLAUDE_MODEL      Claude model (default: haiku for CLI, claude-haiku-4-5-20251001 for API)
+  GIT_IDK_OPENAI_MODEL      OpenAI model (default: gpt-4o-mini)
+  GIT_IDK_GEMINI_MODEL      Gemini model (default: gemini-2.5-flash-lite)
+  GIT_IDK_OLLAMA_MODEL      Ollama model (default: llama3.2)
+  GIT_IDK_OPENAI_URL        OpenAI-compatible endpoint URL
+  GIT_IDK_OLLAMA_URL        Ollama server URL (default: http://localhost:11434/api/chat)
+  AI_GATEWAY_BASE_URL       Gateway POST URL; /v1/messages is appended if the URL does not already include it
+  AI_GATEWAY_AUTH_HELPER    Executable that prints the gateway key or token (stdout, first line)
+  GIT_IDK_AI_GATEWAY_MODEL  Model id sent in the gateway request body (optional)
+  ANTHROPIC_API_KEY         API key for Claude API
+  OPENAI_API_KEY            API key for OpenAI
+  GEMINI_API_KEY            API key for Google Gemini
 
 Config file:
   ~/.config/git-idk.conf   Sourced at startup (set variables like NUM_SUGGESTIONS=5)
