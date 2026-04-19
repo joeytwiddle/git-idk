@@ -464,7 +464,8 @@ build_system_prompt() {
 You are a helpful assistant that generates git commit messages. Based on the staged changes and commit history provided, suggest commit messages that:
 
 1. Read through each of the provided commit messages and understand the style and conventions used in the repository's existing commits
-2. DO NOT use conventional commit format (feat:, fix:, docs:, refactor:, test:, chore:, etc.) unless most OTHER commit messages have also been using this form
+2. DO NOT use conventional commit format by default
+3. But DO USE conventional commit format (feat:, fix:, docs:, refactor:, test:, chore:, etc.) ONLY IF most other commit messages are already using it
 3. Are concise but descriptive (ideally under 72 characters for the first line)
 4. Describe WHAT changed and WHY, not HOW
 5. Use imperative language
