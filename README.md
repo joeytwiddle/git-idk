@@ -4,7 +4,7 @@ AI-powered commit message generator. Analyzes your staged changes and recent com
 
 ## Features
 
-- **Multiple backends**: Claude CLI, Claude API, OpenAI, Gemini, Ollama
+- **Multiple backends**: Claude CLI, Claude API, AI Gateway, OpenAI, Gemini, Ollama
 - **Style matching**: Learns from your recent commits (conventional commits, etc.)
 - **Interactive**: Select, edit, retry with feedback, or enter your own message
 - **Review mode**: Suggest alternative messages for existing commits (`-C`)
@@ -12,12 +12,13 @@ AI-powered commit message generator. Analyzes your staged changes and recent com
 
 ## Installation
 
-```bash
-# Clone and add to PATH
-git clone https://github.com/youruser/git-idk.git
-ln -s $(pwd)/git-idk/git-idk ~/.local/bin/git-idk
+Requires bash 4.3+, `git`, `curl`, and `jq`. On macOS the system bash is 3.2, so you'll need `brew install bash` first.
 
-# Or just copy the script
+```bash
+# Clone this repo, then either symlink the script onto your PATH...
+ln -s "$(pwd)/git-idk" ~/.local/bin/git-idk
+
+# ...or just copy it
 cp git-idk /usr/local/bin/
 chmod +x /usr/local/bin/git-idk
 ```
@@ -35,6 +36,7 @@ git-idk -a
 # Review an existing commit
 git-idk -C HEAD~2
 git-idk -C 3        # same as HEAD~3
+git-idk -3          # shorthand: same as -C 3
 
 # Use a specific backend
 git-idk --ollama
@@ -190,6 +192,10 @@ Uses the [Claude CLI](https://docs.anthropic.com/en/docs/claude-cli) if installe
 
 Direct API calls. Requires `ANTHROPIC_API_KEY`.
 
+### AI Gateway
+
+Anthropic-compatible corporate gateway (shares the Claude `/v1/messages` API shape). Auth token is fetched by running an executable of your choice — useful for SSO-style short-lived tokens. Requires `AI_GATEWAY_BASE_URL` and `AI_GATEWAY_AUTH_HELPER`.
+
 ### OpenAI
 
 Requires `OPENAI_API_KEY`. Also works with OpenAI-compatible endpoints via `OPENAI_API_URL`.
@@ -210,14 +216,24 @@ git-idk --ollama
 ## Options
 
 ```
--a, --all                 Stage all modified/deleted files
--C, --commit <ref>        Suggest messages for existing commit
--n, --num <N>             Number of suggestions (default: 3)
--t, --title-commits <N>   Recent commit titles for style (default: 15)
--c, --context-commits <N> Recent commits with full diffs (default: 0)
---model <model>           Override model for selected backend
---debug                   Show the prompt sent to the LLM
--h, --help                Show help
+Backend selection (mutually exclusive):
+  --claude                  Use Claude CLI (default if available)
+  --claude-api              Use Claude API directly
+  --ai-gateway              Use AI Gateway
+  --openai                  Use OpenAI/ChatGPT API
+  --gemini                  Use Google Gemini API
+  --ollama                  Use local Ollama server
+
+Other:
+  -a, --all                 Stage all modified/deleted files
+  -C, --commit <ref>        Suggest messages for existing commit
+  -<N>                      Shorthand for -C <N>
+  -n, --num <N>             Number of suggestions (default: 3)
+  -t, --title-commits <N>   Recent commit titles for style (default: 15)
+  -c, --context-commits <N> Recent commits with full diffs (default: 0)
+  --model <model>           Override model for selected backend
+  --debug                   Show the prompt sent to the LLM
+  -h, --help                Show help
 ```
 
 ## License

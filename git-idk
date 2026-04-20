@@ -29,7 +29,7 @@ STAGE_ALL=false
 TARGET_COMMIT=""
 DEBUG=false
 
-# Model defaults per backend (fast models for quick responses)
+# Model defaults per backend
 CLAUDE_CLI_MODEL="${CLAUDE_CLI_MODEL:-sonnet}"
 CLAUDE_API_MODEL="${CLAUDE_API_MODEL:-claude-sonnet-4-6}"
 OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o-mini}"
@@ -199,7 +199,7 @@ detect_backend() {
         return
     fi
 
-    # Priority: claude CLI > claude API > openai > gemini > ollama
+    # Priority: claude CLI > claude API > ai gateway > openai > gemini > ollama
     if command -v claude &> /dev/null; then
         echo "claude_cli"
     elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
