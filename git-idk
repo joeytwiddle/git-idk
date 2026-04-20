@@ -438,6 +438,13 @@ check_staged_changes() {
     fi
 }
 
+# Rough upper bound on output tokens, scaled to the number of suggestions.
+# A commit message fits in ~40 tokens; use 256 per suggestion with 256 overhead
+# to cover numbering, whitespace, and occasional longer bodies.
+max_output_tokens() {
+    echo $(( (NUM_SUGGESTIONS + 1) * 256 ))
+}
+
 # Build the system prompt
 build_system_prompt() {
     cat << 'EOF'
@@ -538,9 +545,10 @@ call_claude_api() {
         --arg model "$CLAUDE_API_MODEL" \
         --arg system "$system_prompt" \
         --arg content "$prompt" \
+        --argjson max_tokens "$(max_output_tokens)" \
         '{
             model: $model,
-            max_tokens: 1024,
+            max_tokens: $max_tokens,
             system: $system,
             messages: [{"role": "user", "content": $content}]
         }')
@@ -598,9 +606,10 @@ call_ai_gateway() {
         --arg model "$gateway_model" \
         --arg system "$system_prompt" \
         --arg content "$prompt" \
+        --argjson max_tokens "$(max_output_tokens)" \
         '{
             model: $model,
-            max_tokens: 1024,
+            max_tokens: $max_tokens,
             system: $system,
             messages: [{"role": "user", "content": $content}]
         }')
@@ -645,9 +654,10 @@ call_openai() {
         --arg model "$OPENAI_MODEL" \
         --arg system "$system_prompt" \
         --arg content "$prompt" \
+        --argjson max_tokens "$(max_output_tokens)" \
         '{
             model: $model,
-            max_tokens: 1024,
+            max_tokens: $max_tokens,
             messages: [
                 {"role": "system", "content": $system},
                 {"role": "user", "content": $content}
@@ -685,10 +695,11 @@ $prompt"
     local request_body
     request_body=$(jq -n \
         --arg content "$full_prompt" \
+        --argjson max_tokens "$(max_output_tokens)" \
         '{
             contents: [{"parts": [{"text": $content}]}],
             generationConfig: {
-                maxOutputTokens: 1024
+                maxOutputTokens: $max_tokens
             }
         }')
 
