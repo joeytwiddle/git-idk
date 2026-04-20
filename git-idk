@@ -27,8 +27,8 @@ TARGET_COMMIT=""
 DEBUG=false
 
 # Model defaults per backend (fast models for quick responses)
-CLAUDE_CLI_MODEL="${GIT_IDK_CLAUDE_MODEL:-${CLAUDE_CLI_MODEL:-haiku}}"
-CLAUDE_API_MODEL="${GIT_IDK_CLAUDE_MODEL:-${CLAUDE_API_MODEL:-claude-haiku-4-5-20251001}}"
+CLAUDE_CLI_MODEL="${GIT_IDK_CLAUDE_MODEL:-${CLAUDE_CLI_MODEL:-sonnet}}"
+CLAUDE_API_MODEL="${GIT_IDK_CLAUDE_MODEL:-${CLAUDE_API_MODEL:-claude-sonnet-4-6}}"
 OPENAI_MODEL="${GIT_IDK_OPENAI_MODEL:-${OPENAI_MODEL:-gpt-4o-mini}}"
 GEMINI_MODEL="${GIT_IDK_GEMINI_MODEL:-${GEMINI_MODEL:-gemini-2.5-flash-lite}}"
 OLLAMA_MODEL="${GIT_IDK_OLLAMA_MODEL:-${OLLAMA_MODEL:-llama3.2}}"
@@ -88,7 +88,7 @@ Environment variables:
   GIT_IDK_NUM_SUGGESTIONS  Number of suggestions (default: 3)
   GIT_IDK_TITLE_COMMITS    Number of recent commit titles for style (default: 15)
   GIT_IDK_CONTEXT_COMMITS  Number of recent commits with full diffs (default: 0)
-  GIT_IDK_CLAUDE_MODEL     Claude model (default: haiku for CLI, claude-haiku-4-5-20251001 for API)
+  GIT_IDK_CLAUDE_MODEL     Claude model (default: sonnet for CLI, claude-sonnet-4-6 for API)
   GIT_IDK_OPENAI_MODEL     OpenAI model (default: gpt-4o-mini)
   GIT_IDK_GEMINI_MODEL     Gemini model (default: gemini-2.5-flash-lite)
   GIT_IDK_OLLAMA_MODEL     Ollama model (default: llama3.2)

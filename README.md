@@ -67,7 +67,7 @@ After suggestions are displayed:
 GIT_IDK_BACKEND=ollama          # claude_cli, claude_api, openai, gemini, ollama
 
 # Model overrides
-GIT_IDK_CLAUDE_MODEL=sonnet
+GIT_IDK_CLAUDE_MODEL=haiku      # or opus — default is sonnet
 GIT_IDK_OPENAI_MODEL=gpt-4o
 GIT_IDK_GEMINI_MODEL=gemini-1.5-pro
 GIT_IDK_OLLAMA_MODEL=llama3.1
@@ -107,14 +107,14 @@ OLLAMA_MODEL=llama3.1:70b
 
 ```bash
 BACKEND=claude_cli
-CLAUDE_CLI_MODEL=sonnet           # or haiku (default), opus
+CLAUDE_CLI_MODEL=haiku            # or opus — default is sonnet; haiku is cheaper/faster
 ```
 
 **Claude API directly** (set `ANTHROPIC_API_KEY` in your shell)
 
 ```bash
 BACKEND=claude_api
-CLAUDE_API_MODEL=claude-sonnet-4-6
+CLAUDE_API_MODEL=claude-opus-4-7  # default is claude-sonnet-4-6
 ```
 
 **OpenAI** (set `OPENAI_API_KEY` in your shell)
