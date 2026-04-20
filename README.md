@@ -85,13 +85,85 @@ GIT_IDK_CONTEXT_COMMITS=0       # Recent commits with full diffs (expensive)
 
 ### Config File
 
-Create `~/.config/git-idk.conf`:
+Create `~/.config/git-idk.conf` — it's sourced as bash, so use unprefixed names. Pick whichever recipe fits and tweak.
+
+**Fully local and private (Ollama, no API keys)**
 
 ```bash
 BACKEND=ollama
-OLLAMA_MODEL=qwen2.5
+OLLAMA_MODEL=qwen2.5:7b           # or llama3.2, codellama, deepseek-coder-v2...
 NUM_SUGGESTIONS=5
 ```
+
+**Remote Ollama server**
+
+```bash
+BACKEND=ollama
+OLLAMA_API_URL=http://192.168.1.10:11434/api/chat
+OLLAMA_MODEL=llama3.1:70b
+```
+
+**Claude CLI (default if installed — uses whatever auth `claude` already has)**
+
+```bash
+BACKEND=claude_cli
+CLAUDE_CLI_MODEL=sonnet           # or haiku (default), opus
+```
+
+**Claude API directly** (set `ANTHROPIC_API_KEY` in your shell)
+
+```bash
+BACKEND=claude_api
+CLAUDE_API_MODEL=claude-sonnet-4-6
+```
+
+**OpenAI** (set `OPENAI_API_KEY` in your shell)
+
+```bash
+BACKEND=openai
+OPENAI_MODEL=gpt-4o               # or gpt-4o-mini (default, cheapest)
+```
+
+**OpenAI-compatible endpoint** (LM Studio, vLLM, OpenRouter, Groq...)
+
+```bash
+BACKEND=openai
+OPENAI_API_URL=http://localhost:1234/v1/chat/completions
+OPENAI_MODEL=local-model
+```
+
+```bash
+# OpenRouter (set OPENAI_API_KEY=sk-or-... in your shell)
+BACKEND=openai
+OPENAI_API_URL=https://openrouter.ai/api/v1/chat/completions
+OPENAI_MODEL=anthropic/claude-3.5-sonnet
+```
+
+**Google Gemini** (set `GEMINI_API_KEY` in your shell)
+
+```bash
+BACKEND=gemini
+GEMINI_MODEL=gemini-2.5-flash     # or gemini-2.5-flash-lite (default), gemini-2.5-pro
+```
+
+**Corporate AI gateway** (Anthropic-compatible, with auth helper for SSO-style tokens)
+
+```bash
+BACKEND=ai_gateway
+AI_GATEWAY_BASE_URL=https://ai-gateway.example.com   # /v1/messages is auto-appended
+AI_GATEWAY_AUTH_HELPER=/usr/local/bin/ai-gateway-login   # prints token on stdout
+AI_GATEWAY_MODEL=claude-haiku-4-5                    # optional
+```
+
+**Higher-quality suggestions** (more context, more tokens, slower)
+
+```bash
+NUM_SUGGESTIONS=5
+NUM_TITLE_COMMITS=30              # show more of your commit-message style
+NUM_CONTEXT_COMMITS=3             # include full diffs of N recent commits
+```
+
+You can combine a backend block with a behavior block — they're all just shell variables.
 
 ## Backends
 
