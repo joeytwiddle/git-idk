@@ -344,7 +344,13 @@ ensure_ollama_model() {
         return 0
     fi
 
-    # Model not found, pull it
+    # Model not found — pull it (requires ollama CLI on the local machine,
+    # which only helps if OLLAMA_API_URL points at localhost)
+    if ! command -v ollama &> /dev/null; then
+        echo -e "${RED}Error: Ollama model '$model' is not available at $base_url, and the 'ollama' CLI is not installed locally to pull it.${NC}" >&2
+        echo -e "${YELLOW}Pull the model on the server, or install ollama locally and point OLLAMA_API_URL at localhost.${NC}" >&2
+        exit 1
+    fi
     echo -e "${CYAN}Pulling Ollama model: $model${NC}"
     if ! ollama pull "$model"; then
         echo -e "${RED}Failed to pull model: $model${NC}" >&2
