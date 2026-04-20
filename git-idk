@@ -37,7 +37,7 @@ GEMINI_MODEL="${GEMINI_MODEL:-gemini-2.5-flash-lite}"
 OLLAMA_MODEL="${OLLAMA_MODEL:-llama3.2}"
 
 # API endpoints
-CLAUDE_API_URL="${CLAUDE_API_URL:-https://api.anthropic.com/v1/messages}"
+ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-https://api.anthropic.com}"
 OPENAI_API_URL="${OPENAI_API_URL:-https://api.openai.com/v1/chat/completions}"
 GEMINI_API_URL="${GEMINI_API_URL:-https://generativelanguage.googleapis.com/v1beta/models}"
 OLLAMA_API_URL="${OLLAMA_API_URL:-http://localhost:11434/api/chat}"
@@ -96,7 +96,7 @@ Environment variables:
   Provider settings (unprefixed, vendor-namespaced):
     CLAUDE_CLI_MODEL         Claude CLI model (default: sonnet)
     CLAUDE_API_MODEL         Claude API model (default: claude-sonnet-4-6)
-    CLAUDE_API_URL           Claude API endpoint (default: https://api.anthropic.com/v1/messages)
+    ANTHROPIC_BASE_URL       Claude API base URL (default: https://api.anthropic.com); /v1/messages is appended
     OPENAI_MODEL             OpenAI model (default: gpt-4o-mini)
     OPENAI_API_URL           OpenAI-compatible endpoint (default: https://api.openai.com/v1/chat/completions)
     GEMINI_MODEL             Gemini model (default: gemini-2.5-flash-lite)
@@ -567,7 +567,7 @@ call_claude_api() {
         }')
 
     local response
-    if ! response=$(curl -sS --connect-timeout 10 --max-time 120 -X POST "$CLAUDE_API_URL" \
+    if ! response=$(curl -sS --connect-timeout 10 --max-time 120 -X POST "${ANTHROPIC_BASE_URL%/}/v1/messages" \
         -H "Content-Type: application/json" \
         -H "x-api-key: $ANTHROPIC_API_KEY" \
         -H "anthropic-version: 2023-06-01" \
