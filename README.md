@@ -60,45 +60,60 @@ After suggestions are displayed:
 
 ## Configuration
 
+Set via CLI flags, environment variables, or a config file at `~/.config/git-idk.conf` (sourced as bash). **Env vars and config-file names are identical** — copy-paste between them.
+
+**Precedence**: CLI flags > config file > environment variables. The config file is sourced as bash, so any assignment in it overrides an env var of the same name. Use the config file for your durable settings; use env vars only for values you don't have in the config file; use CLI flags for one-off overrides.
+
+Naming rule:
+
+- `GIT_IDK_*` for git-idk's own behavior (backend selection, suggestion count, etc.)
+- Vendor-namespaced names for provider settings — `CLAUDE_*`, `OPENAI_*`, `GEMINI_*`, `OLLAMA_*`, `AI_GATEWAY_*` — so they can be shared across tools
+- Standard names for credentials: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`
+
 ### Environment Variables
 
 ```bash
-# Backend selection
-GIT_IDK_BACKEND=ollama          # claude_cli, claude_api, openai, gemini, ollama
+# Backend selection (git-idk-specific)
+GIT_IDK_BACKEND=ollama          # auto, claude_cli, claude_api, ai_gateway, openai, gemini, ollama
 
-# Model overrides
-GIT_IDK_CLAUDE_MODEL=haiku      # or opus — default is sonnet
-GIT_IDK_OPENAI_MODEL=gpt-4o
-GIT_IDK_GEMINI_MODEL=gemini-1.5-pro
-GIT_IDK_OLLAMA_MODEL=llama3.1
+# Model overrides (vendor-namespaced)
+CLAUDE_CLI_MODEL=haiku          # or opus — default is sonnet
+CLAUDE_API_MODEL=claude-opus-4-7 # default is claude-sonnet-4-6
+OPENAI_MODEL=gpt-4o
+GEMINI_MODEL=gemini-2.5-pro
+OLLAMA_MODEL=llama3.1
 
-# API keys (for API backends)
-ANTHROPIC_API_KEY=sk-...
+# Endpoint overrides (optional)
+OPENAI_API_URL=https://openrouter.ai/api/v1/chat/completions
+OLLAMA_API_URL=http://192.168.1.10:11434/api/chat
+
+# API keys (standard names, shared with other tools)
+ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
 GEMINI_API_KEY=...
 
-# Behavior
+# Behavior (git-idk-specific)
 GIT_IDK_NUM_SUGGESTIONS=5
-GIT_IDK_TITLE_COMMITS=20        # Recent commits to show for style
-GIT_IDK_CONTEXT_COMMITS=0       # Recent commits with full diffs (expensive)
+GIT_IDK_TITLE_COMMITS=20        # recent commits shown for style
+GIT_IDK_CONTEXT_COMMITS=0       # recent commits with full diffs (expensive)
 ```
 
 ### Config File
 
-Create `~/.config/git-idk.conf` — it's sourced as bash, so use unprefixed names. Pick whichever recipe fits and tweak.
+Create `~/.config/git-idk.conf` and drop in any of these recipes. Names are the same as env vars — paste them in verbatim.
 
 **Fully local and private (Ollama, no API keys)**
 
 ```bash
-BACKEND=ollama
+GIT_IDK_BACKEND=ollama
 OLLAMA_MODEL=qwen2.5:7b           # or llama3.2, codellama, deepseek-coder-v2...
-NUM_SUGGESTIONS=5
+GIT_IDK_NUM_SUGGESTIONS=5
 ```
 
 **Remote Ollama server**
 
 ```bash
-BACKEND=ollama
+GIT_IDK_BACKEND=ollama
 OLLAMA_API_URL=http://192.168.1.10:11434/api/chat
 OLLAMA_MODEL=llama3.1:70b
 ```
@@ -106,35 +121,35 @@ OLLAMA_MODEL=llama3.1:70b
 **Claude CLI (default if installed — uses whatever auth `claude` already has)**
 
 ```bash
-BACKEND=claude_cli
+GIT_IDK_BACKEND=claude_cli
 CLAUDE_CLI_MODEL=haiku            # or opus — default is sonnet; haiku is cheaper/faster
 ```
 
 **Claude API directly** (set `ANTHROPIC_API_KEY` in your shell)
 
 ```bash
-BACKEND=claude_api
+GIT_IDK_BACKEND=claude_api
 CLAUDE_API_MODEL=claude-opus-4-7  # default is claude-sonnet-4-6
 ```
 
 **OpenAI** (set `OPENAI_API_KEY` in your shell)
 
 ```bash
-BACKEND=openai
+GIT_IDK_BACKEND=openai
 OPENAI_MODEL=gpt-4o               # or gpt-4o-mini (default, cheapest)
 ```
 
 **OpenAI-compatible endpoint** (LM Studio, vLLM, OpenRouter, Groq...)
 
 ```bash
-BACKEND=openai
+GIT_IDK_BACKEND=openai
 OPENAI_API_URL=http://localhost:1234/v1/chat/completions
 OPENAI_MODEL=local-model
 ```
 
 ```bash
 # OpenRouter (set OPENAI_API_KEY=sk-or-... in your shell)
-BACKEND=openai
+GIT_IDK_BACKEND=openai
 OPENAI_API_URL=https://openrouter.ai/api/v1/chat/completions
 OPENAI_MODEL=anthropic/claude-3.5-sonnet
 ```
@@ -142,14 +157,14 @@ OPENAI_MODEL=anthropic/claude-3.5-sonnet
 **Google Gemini** (set `GEMINI_API_KEY` in your shell)
 
 ```bash
-BACKEND=gemini
+GIT_IDK_BACKEND=gemini
 GEMINI_MODEL=gemini-2.5-flash     # or gemini-2.5-flash-lite (default), gemini-2.5-pro
 ```
 
 **Corporate AI gateway** (Anthropic-compatible, with auth helper for SSO-style tokens)
 
 ```bash
-BACKEND=ai_gateway
+GIT_IDK_BACKEND=ai_gateway
 AI_GATEWAY_BASE_URL=https://ai-gateway.example.com   # /v1/messages is auto-appended
 AI_GATEWAY_AUTH_HELPER=/usr/local/bin/ai-gateway-login   # prints token on stdout
 AI_GATEWAY_MODEL=claude-haiku-4-5                    # optional
@@ -158,9 +173,9 @@ AI_GATEWAY_MODEL=claude-haiku-4-5                    # optional
 **Higher-quality suggestions** (more context, more tokens, slower)
 
 ```bash
-NUM_SUGGESTIONS=5
-NUM_TITLE_COMMITS=30              # show more of your commit-message style
-NUM_CONTEXT_COMMITS=3             # include full diffs of N recent commits
+GIT_IDK_NUM_SUGGESTIONS=5
+GIT_IDK_TITLE_COMMITS=30          # show more of your commit-message style
+GIT_IDK_CONTEXT_COMMITS=3         # include full diffs of N recent commits
 ```
 
 You can combine a backend block with a behavior block — they're all just shell variables.
@@ -177,7 +192,7 @@ Direct API calls. Requires `ANTHROPIC_API_KEY`.
 
 ### OpenAI
 
-Requires `OPENAI_API_KEY`. Also works with OpenAI-compatible endpoints via `GIT_IDK_OPENAI_URL`.
+Requires `OPENAI_API_KEY`. Also works with OpenAI-compatible endpoints via `OPENAI_API_URL`.
 
 ### Gemini
 

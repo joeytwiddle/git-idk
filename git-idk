@@ -15,38 +15,38 @@ set -euo pipefail
 # Need bash >= 4.3, due to use of `local -n ` and `readarray`
 [[ "${BASH_VERSINFO[0]}" -lt 4 ]] && { echo "Requires bash 4+"; exit 1; }
 
-# Source config file if it exists (before setting defaults)
+# Source config file if it exists — assignments in it override any env vars of the same name
 [[ -f ~/.config/git-idk.conf ]] && source ~/.config/git-idk.conf
 
-# Configuration (env vars override config file)
-NUM_SUGGESTIONS="${GIT_IDK_NUM_SUGGESTIONS:-${NUM_SUGGESTIONS:-3}}"
-NUM_CONTEXT_COMMITS="${GIT_IDK_CONTEXT_COMMITS:-${NUM_CONTEXT_COMMITS:-0}}"
-NUM_TITLE_COMMITS="${GIT_IDK_TITLE_COMMITS:-${NUM_TITLE_COMMITS:-15}}"
+# Configuration — CLI flags (parsed later) override these; these override env vars
+NUM_SUGGESTIONS="${GIT_IDK_NUM_SUGGESTIONS:-3}"
+NUM_CONTEXT_COMMITS="${GIT_IDK_CONTEXT_COMMITS:-0}"
+NUM_TITLE_COMMITS="${GIT_IDK_TITLE_COMMITS:-15}"
 STAGE_ALL=false
 TARGET_COMMIT=""
 DEBUG=false
 
 # Model defaults per backend (fast models for quick responses)
-CLAUDE_CLI_MODEL="${GIT_IDK_CLAUDE_MODEL:-${CLAUDE_CLI_MODEL:-sonnet}}"
-CLAUDE_API_MODEL="${GIT_IDK_CLAUDE_MODEL:-${CLAUDE_API_MODEL:-claude-sonnet-4-6}}"
-OPENAI_MODEL="${GIT_IDK_OPENAI_MODEL:-${OPENAI_MODEL:-gpt-4o-mini}}"
-GEMINI_MODEL="${GIT_IDK_GEMINI_MODEL:-${GEMINI_MODEL:-gemini-2.5-flash-lite}}"
-OLLAMA_MODEL="${GIT_IDK_OLLAMA_MODEL:-${OLLAMA_MODEL:-llama3.2}}"
+CLAUDE_CLI_MODEL="${CLAUDE_CLI_MODEL:-sonnet}"
+CLAUDE_API_MODEL="${CLAUDE_API_MODEL:-claude-sonnet-4-6}"
+OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o-mini}"
+GEMINI_MODEL="${GEMINI_MODEL:-gemini-2.5-flash-lite}"
+OLLAMA_MODEL="${OLLAMA_MODEL:-llama3.2}"
 
 # API endpoints
 CLAUDE_API_URL="${CLAUDE_API_URL:-https://api.anthropic.com/v1/messages}"
-OPENAI_API_URL="${GIT_IDK_OPENAI_URL:-${OPENAI_API_URL:-https://api.openai.com/v1/chat/completions}}"
+OPENAI_API_URL="${OPENAI_API_URL:-https://api.openai.com/v1/chat/completions}"
 GEMINI_API_URL="${GEMINI_API_URL:-https://generativelanguage.googleapis.com/v1beta/models}"
-OLLAMA_API_URL="${GIT_IDK_OLLAMA_URL:-${OLLAMA_API_URL:-http://localhost:11434/api/chat}}"
+OLLAMA_API_URL="${OLLAMA_API_URL:-http://localhost:11434/api/chat}"
 
 # AI Gateway: token from AI_GATEWAY_AUTH_HELPER for x-api-key; POST URL is AI_GATEWAY_BASE_URL
 AI_GATEWAY_BASE_URL="${AI_GATEWAY_BASE_URL:-}"
 AI_GATEWAY_AUTH_HELPER="${AI_GATEWAY_AUTH_HELPER:-}"
-AI_GATEWAY_MODEL="${GIT_IDK_AI_GATEWAY_MODEL:-${AI_GATEWAY_MODEL:-}}"
+AI_GATEWAY_MODEL="${AI_GATEWAY_MODEL:-}"
 
 # Backend selection: claude_cli, claude_api, ai_gateway, openai, gemini, ollama
 # Auto-detected, but can be forced with GIT_IDK_BACKEND or CLI flags
-BACKEND="${GIT_IDK_BACKEND:-${BACKEND:-auto}}"
+BACKEND="${GIT_IDK_BACKEND:-auto}"
 
 # Colors (red and blue are always bold, for legacy displays)
 BOLD='\033[1m'
@@ -84,25 +84,34 @@ Other options:
   -h, --help                Show this help message
 
 Environment variables:
-  GIT_IDK_BACKEND          Backend to use (claude_cli, claude_api, ai_gateway, openai, gemini, ollama)
-  GIT_IDK_NUM_SUGGESTIONS  Number of suggestions (default: 3)
-  GIT_IDK_TITLE_COMMITS    Number of recent commit titles for style (default: 15)
-  GIT_IDK_CONTEXT_COMMITS  Number of recent commits with full diffs (default: 0)
-  GIT_IDK_CLAUDE_MODEL     Claude model (default: sonnet for CLI, claude-sonnet-4-6 for API)
-  GIT_IDK_OPENAI_MODEL     OpenAI model (default: gpt-4o-mini)
-  GIT_IDK_GEMINI_MODEL     Gemini model (default: gemini-2.5-flash-lite)
-  GIT_IDK_OLLAMA_MODEL     Ollama model (default: llama3.2)
-  GIT_IDK_OPENAI_URL       OpenAI-compatible endpoint URL
-  GIT_IDK_OLLAMA_URL       Ollama server URL (default: http://localhost:11434/api/chat)
-  AI_GATEWAY_BASE_URL      Gateway POST URL; /v1/messages is appended if the URL does not already include it
-  AI_GATEWAY_AUTH_HELPER   Executable that prints the gateway key or token (stdout, first line)
-  GIT_IDK_AI_GATEWAY_MODEL / AI_GATEWAY_MODEL  Model id sent in the gateway request body (optional)
-  ANTHROPIC_API_KEY          API key for Claude API
-  OPENAI_API_KEY             API key for OpenAI
-  GEMINI_API_KEY             API key for Google Gemini
+  git-idk behavior (prefixed):
+    GIT_IDK_BACKEND          Backend to use (claude_cli, claude_api, ai_gateway, openai, gemini, ollama)
+    GIT_IDK_NUM_SUGGESTIONS  Number of suggestions (default: 3)
+    GIT_IDK_TITLE_COMMITS    Number of recent commit titles for style (default: 15)
+    GIT_IDK_CONTEXT_COMMITS  Number of recent commits with full diffs (default: 0)
+
+  Provider settings (unprefixed, vendor-namespaced):
+    CLAUDE_CLI_MODEL         Claude CLI model (default: sonnet)
+    CLAUDE_API_MODEL         Claude API model (default: claude-sonnet-4-6)
+    CLAUDE_API_URL           Claude API endpoint (default: https://api.anthropic.com/v1/messages)
+    OPENAI_MODEL             OpenAI model (default: gpt-4o-mini)
+    OPENAI_API_URL           OpenAI-compatible endpoint (default: https://api.openai.com/v1/chat/completions)
+    GEMINI_MODEL             Gemini model (default: gemini-2.5-flash-lite)
+    GEMINI_API_URL           Gemini endpoint (default: https://generativelanguage.googleapis.com/v1beta/models)
+    OLLAMA_MODEL             Ollama model (default: llama3.2)
+    OLLAMA_API_URL           Ollama server URL (default: http://localhost:11434/api/chat)
+    AI_GATEWAY_BASE_URL      Gateway POST URL; /v1/messages is appended if the URL does not already include it
+    AI_GATEWAY_AUTH_HELPER   Executable that prints the gateway key or token (stdout, first line)
+    AI_GATEWAY_MODEL         Model id sent in the gateway request body (optional)
+
+  Credentials (unprefixed, standard):
+    ANTHROPIC_API_KEY        API key for Claude API
+    OPENAI_API_KEY           API key for OpenAI
+    GEMINI_API_KEY           API key for Google Gemini
 
 Config file:
-  ~/.config/git-idk.conf   Sourced at startup (set variables like NUM_SUGGESTIONS=5)
+  ~/.config/git-idk.conf   Sourced at startup; use the same names as above
+                           (e.g. GIT_IDK_NUM_SUGGESTIONS=5, OLLAMA_MODEL=qwen2.5)
 EOF
 }
 
