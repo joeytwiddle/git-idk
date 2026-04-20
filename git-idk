@@ -12,8 +12,11 @@
 
 set -euo pipefail
 
-# Need bash >= 4.3, due to use of `local -n ` and `readarray`
-[[ "${BASH_VERSINFO[0]}" -lt 4 ]] && { echo "Requires bash 4+"; exit 1; }
+# Need bash >= 4.3, due to use of `local -n` and `readarray`
+if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 3) )); then
+    echo "Requires bash 4.3 or newer (current: ${BASH_VERSION}). On macOS: brew install bash" >&2
+    exit 1
+fi
 
 # Source config file if it exists — assignments in it override any env vars of the same name
 [[ -f ~/.config/git-idk.conf ]] && source ~/.config/git-idk.conf
