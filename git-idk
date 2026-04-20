@@ -784,7 +784,7 @@ parse_messages() {
     while IFS= read -r line; do
         # Remove leading number and punctuation (1. or 1: or 1) etc.)
         local cleaned
-        cleaned=$(echo "$line" | sed -E 's/^[0-9]+[\.\:\)]\s*//')
+        cleaned=$(echo "$line" | sed -E 's/^[0-9]+[\.\:\)][[:space:]]*//')
         if [[ -n "$cleaned" ]]; then
             messages+=("$cleaned")
         fi
