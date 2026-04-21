@@ -547,15 +547,21 @@ $prompt"
     echo "$response"
 }
 
-# Call Claude API
-call_claude_api() {
-    local prompt="$1"
+# Shared Anthropic /v1/messages call — used by both claude_api and ai_gateway.
+# Usage: call_anthropic_messages <url> <api_key> <display_name> <model> <prompt>
+call_anthropic_messages() {
+    local url="$1"
+    local api_key="$2"
+    local display_name="$3"
+    local model="$4"
+    local prompt="$5"
+
     local system_prompt
     system_prompt=$(build_system_prompt)
 
     local request_body
     request_body=$(jq -n \
-        --arg model "$CLAUDE_API_MODEL" \
+        --arg model "$model" \
         --arg system "$system_prompt" \
         --arg content "$prompt" \
         --argjson max_tokens "$(max_output_tokens)" \
@@ -567,98 +573,76 @@ call_claude_api() {
         }')
 
     local response
-    if ! response=$(curl -sS --connect-timeout 10 --max-time 120 -X POST "${ANTHROPIC_BASE_URL%/}/v1/messages" \
+    if ! response=$(curl -sS --connect-timeout 10 --max-time 120 -X POST "$url" \
         -H "Content-Type: application/json" \
-        -H "x-api-key: $ANTHROPIC_API_KEY" \
+        -H "x-api-key: $api_key" \
         -H "anthropic-version: 2023-06-01" \
         -d "$request_body"); then
-        echo -e "${RED}Claude API request failed (network or HTTP error).${NC}" >&2
+        echo -e "${RED}${display_name} request failed (network or HTTP error).${NC}" >&2
         exit 1
     fi
 
-    check_json_response "Claude API" "$response"
-
-    # Check for errors
-    local error_type
-    error_type=$(echo "$response" | jq -r '.error.type // empty')
-    if [[ -n "$error_type" ]]; then
-        local error_message
-        error_message=$(echo "$response" | jq -r '.error.message // "Unknown error"')
-        echo -e "${RED}Claude API Error ($error_type): $error_message${NC}" >&2
-        exit 1
-    fi
-
-    # Extract the text content
-    echo "$response" | jq -r '.content[0].text'
-}
-
-# AI Gateway (currently only supports Anthropic Messages API)
-call_ai_gateway() {
-    local prompt="$1"
-    local system_prompt
-    system_prompt=$(build_system_prompt)
-
-    local gateway_model="${AI_GATEWAY_MODEL:-$CLAUDE_API_MODEL}"
-
-    local token
-    if ! token=$("$AI_GATEWAY_AUTH_HELPER" | head -n1 | tr -d '\r'); then
-        echo -e "${RED}Error: AI_GATEWAY_AUTH_HELPER exited with a non-zero status.${NC}" >&2
-        exit 1
-    fi
-    # trim leading/trailing whitespace
-    token="${token#"${token%%[![:space:]]*}"}"
-    token="${token%"${token##*[![:space:]]}"}"
-
-    if [[ -z "$token" ]]; then
-        echo -e "${RED}Error: AI_GATEWAY_AUTH_HELPER produced an empty token.${NC}" >&2
-        exit 1
-    fi
-
-    local url="$AI_GATEWAY_BASE_URL"
-    if [[ "$url" != *"/v1/messages"* ]]; then
-        url="${url%/}/v1/messages"
-    fi
-
-    local request_body
-    request_body=$(jq -n \
-        --arg model "$gateway_model" \
-        --arg system "$system_prompt" \
-        --arg content "$prompt" \
-        --argjson max_tokens "$(max_output_tokens)" \
-        '{
-            model: $model,
-            max_tokens: $max_tokens,
-            system: $system,
-            messages: [{"role": "user", "content": $content}]
-        }')
-
-    local response
-    if ! response=$(curl -fsS --connect-timeout 10 --max-time 120 -X POST "$url" \
-        -H "Content-Type: application/json" \
-        -H "x-api-key: $token" \
-        -H "anthropic-version: 2023-06-01" \
-        -d "$request_body"); then
-        echo -e "${RED}Error: AI Gateway request failed (network or HTTP error).${NC}" >&2
-        exit 1
-    fi
+    check_json_response "$display_name" "$response"
 
     local error_type
     error_type=$(echo "$response" | jq -r '.error.type // empty')
     if [[ -n "$error_type" ]]; then
         local error_message
         error_message=$(echo "$response" | jq -r '.error.message // "Unknown error"')
-        echo -e "${RED}AI Gateway Error ($error_type): $error_message${NC}" >&2
+        echo -e "${RED}${display_name} Error ($error_type): $error_message${NC}" >&2
         exit 1
     fi
 
     local text
     text=$(echo "$response" | jq -r '.content[0].text // empty')
     if [[ -z "$text" ]]; then
-        echo -e "${RED}Error: AI Gateway returned no message text (unexpected JSON).${NC}" >&2
+        echo -e "${RED}${display_name} returned no message text (unexpected JSON).${NC}" >&2
         echo "$response" | head -c 2000 >&2
         exit 1
     fi
     echo "$text"
+}
+
+# Call Claude API directly
+call_claude_api() {
+    local prompt="$1"
+    call_anthropic_messages \
+        "${ANTHROPIC_BASE_URL%/}/v1/messages" \
+        "$ANTHROPIC_API_KEY" \
+        "Claude API" \
+        "$CLAUDE_API_MODEL" \
+        "$prompt"
+}
+
+# Call AI Gateway (Anthropic-compatible; token fetched via helper binary)
+call_ai_gateway() {
+    local prompt="$1"
+
+    local token
+    if ! token=$("$AI_GATEWAY_AUTH_HELPER" | head -n1 | tr -d '\r'); then
+        echo -e "${RED}Error: AI_GATEWAY_AUTH_HELPER exited with a non-zero status.${NC}" >&2
+        exit 1
+    fi
+    # Trim leading/trailing whitespace
+    token="${token#"${token%%[![:space:]]*}"}"
+    token="${token%"${token##*[![:space:]]}"}"
+    if [[ -z "$token" ]]; then
+        echo -e "${RED}Error: AI_GATEWAY_AUTH_HELPER produced an empty token.${NC}" >&2
+        exit 1
+    fi
+
+    # Append /v1/messages unless the user already included it
+    local url="$AI_GATEWAY_BASE_URL"
+    if [[ "$url" != *"/v1/messages"* ]]; then
+        url="${url%/}/v1/messages"
+    fi
+
+    call_anthropic_messages \
+        "$url" \
+        "$token" \
+        "AI Gateway" \
+        "${AI_GATEWAY_MODEL:-$CLAUDE_API_MODEL}" \
+        "$prompt"
 }
 
 # Call OpenAI API (also works with compatible endpoints)
