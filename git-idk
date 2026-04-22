@@ -232,7 +232,6 @@ check_requirements() {
                 echo -e "${RED}Error: 'claude' CLI not found.${NC}" >&2
                 exit 1
             fi
-            BACKEND_DISPLAY="Claude CLI ($CLAUDE_CLI_MODEL)"
             ;;
         claude_api)
             check_curl_jq
@@ -240,7 +239,6 @@ check_requirements() {
                 echo -e "${RED}Error: ANTHROPIC_API_KEY environment variable is not set.${NC}" >&2
                 exit 1
             fi
-            BACKEND_DISPLAY="Claude API ($CLAUDE_API_MODEL)"
             ;;
         ai_gateway)
             check_curl_jq
@@ -263,7 +261,6 @@ check_requirements() {
                 echo -e "${RED}Error: OPENAI_API_KEY environment variable is not set.${NC}" >&2
                 exit 1
             fi
-            BACKEND_DISPLAY="OpenAI ($OPENAI_MODEL)"
             ;;
         gemini)
             check_curl_jq
@@ -271,7 +268,6 @@ check_requirements() {
                 echo -e "${RED}Error: GEMINI_API_KEY environment variable is not set.${NC}" >&2
                 exit 1
             fi
-            BACKEND_DISPLAY="Gemini ($GEMINI_MODEL)"
             ;;
         ollama)
             check_curl_jq
@@ -311,15 +307,20 @@ check_requirements() {
         esac
     fi
 
-    if [[ "$BACKEND" == "ai_gateway" ]]; then
-        BACKEND_DISPLAY="AI Gateway (${AI_GATEWAY_MODEL:-$CLAUDE_API_MODEL})"
-    fi
-
     # For Ollama, ensure model is available (pull if needed)
     if [[ "$BACKEND" == "ollama" ]]; then
         ensure_ollama_model "$OLLAMA_MODEL"
-        BACKEND_DISPLAY="Ollama ($OLLAMA_MODEL)"
     fi
+
+    # Build display name after override so --model is reflected
+    case "$BACKEND" in
+        claude_cli)  BACKEND_DISPLAY="Claude CLI ($CLAUDE_CLI_MODEL)" ;;
+        claude_api)  BACKEND_DISPLAY="Claude API ($CLAUDE_API_MODEL)" ;;
+        ai_gateway)  BACKEND_DISPLAY="AI Gateway (${AI_GATEWAY_MODEL:-$CLAUDE_API_MODEL})" ;;
+        openai)      BACKEND_DISPLAY="OpenAI ($OPENAI_MODEL)" ;;
+        gemini)      BACKEND_DISPLAY="Gemini ($GEMINI_MODEL)" ;;
+        ollama)      BACKEND_DISPLAY="Ollama ($OLLAMA_MODEL)" ;;
+    esac
 }
 
 check_curl_jq() {
