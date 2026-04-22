@@ -1012,7 +1012,10 @@ main() {
         echo -e "${BLUE}[NUM]${NC}select ${BLUE}[e]${NC}dit ${BLUE}[d]${NC}iff ${BLUE}[r]${NC}etry ${BLUE}[Enter/q]${NC}uit ${BLUE}[text]${NC}enter your own message"
         echo -n "> "
 
-        read -r input
+        if ! read -r input; then
+            echo -e "\n${YELLOW}No input (stdin closed), quitting.${NC}" >&2
+            exit 1
+        fi
 
         # Handle retry: r, r5, r 5, r feedback, r5 feedback, r 5 feedback
         if [[ "$input" =~ ^[rR]([0-9]+)?([[:space:]]+(.*))?$ ]]; then
