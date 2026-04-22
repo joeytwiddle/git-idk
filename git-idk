@@ -118,6 +118,15 @@ Config file:
 EOF
 }
 
+# Validate that a flag's argument is a non-negative integer
+require_int() {
+    local flag="$1" value="${2-}"
+    if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+        echo -e "${RED}Error: $flag requires a non-negative integer (got '${value}')${NC}" >&2
+        exit 1
+    fi
+}
+
 # Parse command line arguments
 parse_args() {
     while [[ $# -gt 0 ]]; do
@@ -160,14 +169,17 @@ parse_args() {
                 shift 2
                 ;;
             -n|--num)
+                require_int "--num" "${2-}"
                 NUM_SUGGESTIONS="$2"
                 shift 2
                 ;;
             -c|--context-commits)
+                require_int "--context-commits" "${2-}"
                 NUM_CONTEXT_COMMITS="$2"
                 shift 2
                 ;;
             -t|--title-commits)
+                require_int "--title-commits" "${2-}"
                 NUM_TITLE_COMMITS="$2"
                 shift 2
                 ;;
