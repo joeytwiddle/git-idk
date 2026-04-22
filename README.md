@@ -76,18 +76,18 @@ Naming rule:
 
 ```bash
 # Backend selection (git-idk-specific)
-GIT_IDK_BACKEND=ollama          # auto, claude_cli, claude_api, ai_gateway, openai, gemini, ollama
+GIT_IDK_BACKEND=ollama            # default: auto — also: claude_cli, claude_api, ai_gateway, openai, gemini, ollama
 
 # Model overrides (vendor-namespaced)
-CLAUDE_CLI_MODEL=haiku          # or opus — default is sonnet
-CLAUDE_API_MODEL=claude-opus-4-7 # default is claude-sonnet-4-6
-OPENAI_MODEL=gpt-4o
-GEMINI_MODEL=gemini-2.5-pro
-OLLAMA_MODEL=llama3.1
+CLAUDE_CLI_MODEL=haiku            # default: sonnet, alternative: opus
+CLAUDE_API_MODEL=claude-opus-4-7  # default: claude-sonnet-4-6
+OPENAI_MODEL=gpt-4o               # default: gpt-4o-mini
+GEMINI_MODEL=gemini-2.5-pro       # default: gemini-2.5-flash-lite
+OLLAMA_MODEL=llama3.1             # default: llama3.2
 
-# Endpoint overrides (optional)
-OPENAI_API_URL=https://openrouter.ai/api/v1/chat/completions
-OLLAMA_API_URL=http://192.168.1.10:11434/api/chat
+# Endpoint overrides (optional — defaults shown)
+OPENAI_API_URL=https://openrouter.ai/api/v1/chat/completions   # default: https://api.openai.com/v1/chat/completions
+OLLAMA_API_URL=http://192.168.1.10:11434/api/chat              # default: http://localhost:11434/api/chat
 
 # API keys (standard names, shared with other tools)
 ANTHROPIC_API_KEY=sk-ant-...
