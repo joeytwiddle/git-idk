@@ -86,6 +86,7 @@ GEMINI_MODEL=gemini-2.5-pro       # default: gemini-2.5-flash-lite
 OLLAMA_MODEL=llama3.1             # default: llama3.2
 
 # Endpoint overrides (optional — defaults shown)
+ANTHROPIC_BASE_URL=https://my-anthropic-proxy.example.com      # default: https://api.anthropic.com — /v1/messages is appended
 OPENAI_API_URL=https://openrouter.ai/api/v1/chat/completions   # default: https://api.openai.com/v1/chat/completions
 OLLAMA_API_URL=http://192.168.1.10:11434/api/chat              # default: http://localhost:11434/api/chat
 
