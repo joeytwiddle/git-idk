@@ -471,8 +471,13 @@ max_output_tokens() {
     echo $(( (NUM_SUGGESTIONS + 1) * 256 ))
 }
 
-# Build the system prompt
+# Build the system prompt. If SYSTEM_PROMPT_OVERRIDE is set (used by the
+# interactive "explain" flow), return that instead of the default.
 build_system_prompt() {
+    if [[ -n "${SYSTEM_PROMPT_OVERRIDE:-}" ]]; then
+        echo "$SYSTEM_PROMPT_OVERRIDE"
+        return
+    fi
     cat << 'EOF'
 You are a helpful assistant that generates git commit messages. Based on the staged changes and commit history provided, suggest commit messages that:
 
@@ -982,7 +987,7 @@ main() {
 
         if [[ "$DEBUG" == true ]]; then
             echo -e "${YELLOW}=== DEBUG: Prompt ===${NC}"
-            echo "$prompt" | more
+            echo "$prompt" | ${PAGER:-less}
             echo -e "${YELLOW}=== END Prompt ===${NC}"
             echo ""
         fi
@@ -1011,7 +1016,7 @@ main() {
         fi
 
         # Prompt user
-        echo -e "${BLUE}[NUM]${NC}select ${BLUE}[e]${NC}dit ${BLUE}[d]${NC}iff ${BLUE}[r]${NC}etry ${BLUE}[Enter/q]${NC}uit ${BLUE}[text]${NC}enter your own message"
+        echo -e "${BLUE}[NUM]${NC}select ${BLUE}[e]${NC}dit ${BLUE}[d]${NC}iff e${BLUE}[x]${NC}plain ${BLUE}[r]${NC}etry ${BLUE}[Enter/q]${NC}uit ${BLUE}[text]${NC}enter your own message"
         echo -n "> "
 
         if ! read -r input; then
@@ -1052,6 +1057,19 @@ main() {
             else
                 git diff --cached
             fi
+            echo ""
+            continue
+        fi
+
+        # Handle explain — ask the model to describe the change at a high level
+        if [[ "$input" == "x" || "$input" == "X" ]]; then
+            echo -e "${CYAN}Asking ${BACKEND_DISPLAY} to explain the change...${NC}"
+            SYSTEM_PROMPT_OVERRIDE="You are explaining a code change to an experienced engineer. Describe WHAT the change does at a high level and WHY it matters — its intent, user-visible effects, and any behavior that shifts. Group related edits. Do NOT walk through the diff line-by-line or describe how the code works mechanically. Use markdown headings and bullets where helpful." \
+                call_llm "Explain the following change in detail:
+
+\`\`\`
+$changes_diff
+\`\`\`" | ${PAGER:-less}
             echo ""
             continue
         fi

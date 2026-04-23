@@ -53,6 +53,7 @@ After suggestions are displayed:
 | `1`, `2`, `3`... | Select and commit with that message |
 | `e` or `e 2` | Edit message (first, or specified number) |
 | `d` | Show the diff |
+| `x` | Ask the model to explain the change at a high level |
 | `r` | Retry with more suggestions |
 | `r 5` | Retry with 5 suggestions |
 | `r feedback` | Retry with feedback for the LLM |
