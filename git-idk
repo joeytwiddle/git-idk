@@ -944,13 +944,15 @@ main() {
         fi
     fi
 
-    local commit_count
-    commit_count=$(git rev-list --count HEAD 2>/dev/null || echo "0")
-
+    # Tip of the history to pull style/context from. In review mode we skip the
+    # commit being reviewed and walk back from its parent.
     local last_commit_to_list=HEAD
     if [ -n "$resolved_ref" ]; then
         last_commit_to_list="${resolved_ref}~"
     fi
+
+    local commit_count
+    commit_count=$(git rev-list --count "$last_commit_to_list" 2>/dev/null || echo "0")
 
     # Get commit titles for style reference if requested
     if [[ "$NUM_TITLE_COMMITS" -gt 0 && "$commit_count" -gt 0 ]]; then
