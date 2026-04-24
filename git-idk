@@ -538,8 +538,10 @@ $context_commits
     if [[ -n "$feedback" ]]; then
         message="$message
 
-## Context: User feedback
-$feedback"
+## Important Context: The user has added this feedback to guide how you should compose the commit message:
+<feedback>
+$feedback
+</feedback>"
     fi
 
     echo "$message"
